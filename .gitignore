@@ -1,0 +1,11 @@
+secrets.env
+*.env
+!.env.example
+*.mp4
+*.mov
+*.wav
+cache/
+episodes/
+__pycache__/
+*.pyc
+.DS_Store

@@ -1,0 +1,7 @@
+numpy
+opencv-python
+pillow
+scipy
+faster-whisper
+# system: ffmpeg + ffprobe on PATH
+# matting: RobustVideoMatting (https://github.com/PeterL1n/RobustVideoMatting), run separately
