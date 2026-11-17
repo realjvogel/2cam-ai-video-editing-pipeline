@@ -1,4 +1,5 @@
-"""Flag lines that shouldn't reach the viewer: talk aimed at the editor or the camera, and retakes.
+"""Flag lines that shouldn't reach the viewer: talk aimed at the editor or the camera, retakes, and tone
+(an adult sounding short, frustrated or sarcastic with the kid).
 usage: python3 sab_talk.py <transcript.json> <edl.json>
 transcript: [{s, e, t}, ...] in raw overhead seconds (faster-whisper segments).
 Prints each flagged line that falls inside a kept (non-montage) segment, with its raw time, so it can be
@@ -9,6 +10,25 @@ EDITOR = re.compile(r"\b(transition|cue the music|fast[- ]?motion|speed (it|this
                     r"we('ll| will) cut|testing|check,? check|recording|is it recording|is that on|"
                     r"should we call it|are we done|we done\??$|say (that|it) again|one more time|let'?s (redo|do that again|start over)|start over|"
                     r"look right there|look at the camera|look at me|say,? okay|take two|retake)\b", re.I)
+
+# Tone: words that usually mean frustration, impatience or sarcasm. The transcript has no speakers, so these are
+# candidates for a person (or the reviewer) to judge, not automatic cuts.
+TONE = re.compile(r"\b(i said|i already said|i just said|come on|seriously|stop (it|that|doing)|knock it off|cut it out|ugh+|"
+                  r"whatever|fine,? (whatever|then)|hurry( up)?|focus|pay attention|listen to me|sit (down|still|up)|"
+                  r"what are you doing|are you kidding|you'?re (being|so) |don'?t (do that|touch)|not like that|that'?s not what i|"
+                  r"how many times|oh my gosh|give me a (break|second)|nonsense|you always|you never)\b", re.I)
+
+STOP = set("i a an the is it its no yes okay ok said and you all right yeah now lets let's see that this looks look good my your we so to of".split())
+
+def curt_echo(prev, seg):
+    """A short "Okay, ___." / "Fine, ___." that repeats a word the kid just said (often a correction): reads as clipped.
+    Warm confirmations ("Yeah, a jellyfish!") and "All right" fillers don't count."""
+    w = norm(seg['t'])
+    if not (2 <= len(w) <= 4) or w[0] not in ('okay', 'ok', 'fine', 'whatever'): return False
+    if seg['s'] - prev['e'] > 2.0: return False
+    pw = [x for x in norm(prev['t']) if x not in STOP and len(x) >= 3]
+    from difflib import SequenceMatcher
+    return any(SequenceMatcher(None, x, y).ratio() >= 0.7 for x in w[1:] if x not in STOP and len(x) >= 3 for y in pw)
 
 def norm(t): return re.sub(r"[^a-z' ]", "", t.lower()).split()
 
@@ -23,6 +43,8 @@ def main(tp, ep):
         n = where(seg['s'], seg['e'])
         if not n: continue
         if EDITOR.search(seg['t']): flags.append((seg['s'], seg['e'], n, 'editor/camera talk', seg['t'].strip()))
+        if TONE.search(seg['t']): flags.append((seg['s'], seg['e'], n, 'tone: check', seg['t'].strip()))
+        if i and curt_echo(T[i - 1], seg): flags.append((seg['s'], seg['e'], n, 'tone: curt echo', T[i - 1]['t'].strip() + '  ->  ' + seg['t'].strip()))
         # retake: the same 6+ word run said again within 20 s (shorter runs are normal teaching repetition)
         w = norm(seg['t'])
         for later in T[i + 1:]:
