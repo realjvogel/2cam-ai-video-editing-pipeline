@@ -1,10 +1,11 @@
 """Swap a new intro into a delivered final (e.g. a cut restored or removed inside the intro), keeping everything
 after it as delivered.
-usage: sab_swapintro.py <slug> <old_final.mp4> <new_final.mp4> <old_intro_seconds> <old_title_out_local>
+usage: SAB_OLD_FIRST=<seconds of the old intro's first uncut piece> sab_swapintro.py <slug> <old_final.mp4> <new_final.mp4> <old_intro_seconds> <old_title_out_local>
 Needs W/vo/intro.mp4 (new) and W/vo/wipe.mp4, W/mix.wav (the episode's pre-loudness mix, which starts with the
 same stinger + welcome), W/dlg48.wav, W/edl.json (new intro keep ranges), W/finalize.json (bug timing).
 Video: new intro (+ wordmark bug from the new title end) + old final from the old intro's end; only the stretch up
-to the next keyframe is re-encoded. Audio: the new intro's dialogue, level-matched to the delivered mix, then the
+to the next keyframe is re-encoded. Audio: the new intro's dialogue from dlg48 for every kept piece, plus the music sting taken from the old mix
+(mix - dialogue over the old intro's first uncut piece), level-matched to the delivered mix, then the
 delivered audio from the old intro's end."""
 import json, os, sys, subprocess, wave, tempfile, numpy as np
 slug, old, new, old_intro, old_tout = sys.argv[1], sys.argv[2], sys.argv[3], float(sys.argv[4]), float(sys.argv[5])
@@ -34,12 +35,18 @@ run(['-i', 'concat:' + '|'.join(ts), '-c', 'copy', '-y', T + '/v.mp4'])
 mix = rd(W + '/mix.wav'); dlg = rd(W + '/dlg48.wav')
 if dlg.shape[1] == 1: dlg = np.repeat(dlg, 2, 1)
 run(['-i', old, '-vn', '-ac', '2', '-ar', str(SR), '-y', T + '/old.wav']); oa = rd(T + '/old.wav')
-n0 = int(round((keep[0][1] - keep[0][0]) * SR)); ref = slice(int(0.5 * SR), n0 - int(0.2 * SR))
+# The old mix's intro may have different cuts, so only its music is reused: music = mix - dialogue over the old
+# intro's first piece (dialogue is placed at gain 1.0 in the mix), which holds the whole stinger.
+old_first = float(os.environ.get('SAB_OLD_FIRST', '0')) or (keep[0][1] - keep[0][0])
+nm = int(round(min(old_first, keep[0][1] - keep[0][0]) * SR)); a0 = int(round(keep[0][0] * SR))
+music = mix[:nm] - dlg[a0:a0 + nm]
+ref = slice(int(0.5 * SR), nm - int(0.2 * SR))
 g = float(np.sqrt((oa[ref] ** 2).mean() / max(1e-9, (mix[ref] ** 2).mean())))      # loudnorm ran in linear mode: one gain
-parts = [mix[:n0]] + [dlg[int(round(x * SR)):int(round(y * SR))] for x, y in keep[1:]]
+parts = [dlg[int(round(x * SR)):int(round(y * SR))] for x, y in keep]
 f = int(0.01 * SR); r = np.linspace(0, 1, f)[:, None]
 for i in range(len(parts) - 1): parts[i] = parts[i].copy(); parts[i][-f:] *= r[::-1]; parts[i + 1] = parts[i + 1].copy(); parts[i + 1][:f] *= r
-intro_a = np.concatenate(parts) * g; ni = int(round(new_intro * SR))
+body = np.concatenate(parts); body[:len(music)] += music
+intro_a = body * g; ni = int(round(new_intro * SR))
 intro_a = np.pad(intro_a, ((0, max(0, ni - len(intro_a))), (0, 0)))[:ni]
 # same limiter as the full mix (the delivered audio already went through it; the new intro hasn't)
 w = wave.open(T + '/i.wav', 'wb'); w.setnchannels(2); w.setsampwidth(2); w.setframerate(SR); w.writeframes(np.clip(intro_a, -32768, 32767).astype(np.int16).tobytes()); w.close()
