@@ -1,4 +1,4 @@
-"""Animated outro: drawings composited onto the sheets in Josh's outro clip (first 3 s looped to 12 s) + Keep Drawing lettering.
+"""Animated outro: drawings composited onto the uncovered part of the sheets in Josh's outro clip (first 3 s looped to 12 s) + Keep Drawing lettering.
 usage: outro_animate.py <drawing_0.png> <drawing_1.png> <out.mp4>"""
 import cv2, numpy as np, glob, subprocess
 from PIL import Image
@@ -7,7 +7,13 @@ rects=[(393,263,535,517),(977,263,539,516)]
 import sys; ART0,ART1,OUTP=sys.argv[1],sys.argv[2],sys.argv[3]
 arts=[cv2.imread(ART0),cv2.imread(ART1)]
 layer=np.ones((H,W,3),np.float32)
+def visible_rows(x,y,w,h):   # the characters stand in front of the lower sheets: use only rows that stay uncovered in every frame
+    v=np.min([((lambda hs:(hs[...,1]<40)&(hs[...,2]>200))(cv2.cvtColor(fr,cv2.COLOR_BGR2HSV))[y:y+h,x:x+w]).mean(1) for fr in F[::4]],0)
+    top=int(np.argmax(v>0.95)); bot=top
+    while bot<h-1 and v[bot+1]>0.95: bot+=1
+    return top,bot-8
 for art,(x,y,w,h) in zip(arts,rects):
+    t0,t1=visible_rows(x,y,w,h); y,h=y+t0,t1-t0
     ah,aw=art.shape[:2]; r=min(w*0.97/aw,h*0.97/ah); a=cv2.resize(art,(int(aw*r),int(ah*r)),interpolation=cv2.INTER_AREA)
     ox=x+(w-a.shape[1])//2; oy=y+(h-a.shape[0])//2; layer[oy:oy+a.shape[0],ox:ox+a.shape[1]]=a/255.0
 def text_layer():

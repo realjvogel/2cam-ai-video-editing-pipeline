@@ -10,8 +10,17 @@ A='/home/claude/lookc/look-c-fixed-assets/'
 plate,d0,d1,subp,out=sys.argv[1:6]; HDRF=sys.argv[6] if len(sys.argv)>6 else 'video-how-to-draw-a.png'
 p=cv2.imread(plate); H,W=p.shape[:2]; ch=int(W*9/16); p=cv2.resize(p[0:ch],(1280,720),interpolation=cv2.INTER_AREA)   # keep the top: room for the header
 rs=sheets(p)
+# the subject word sits bottom-centre: fit each drawing into the part of its sheet above it, so feet/shoes stay visible
+_s=Image.open(subp).convert('RGBA'); _a=np.asarray(_s)[...,3]; _ys,_xs=np.where(_a>40); _h=(_ys.max()-_ys.min()+1)*640/(_xs.max()-_xs.min()+1)
+SUBJ_TOP=712-_h
+def above(r,limit):
+    (cx,cy),(w,h),ang=r; vert_h=h if (ang%90)<45 else w; top=cy-vert_h/2; bot=min(cy+vert_h/2,limit-6)
+    if bot>=cy+vert_h/2-1: return r
+    nh=max(bot-top,vert_h*0.55); ncy=top+nh/2
+    return ((cx,ncy),(w,nh) if (ang%90)<45 else (nh,h),ang)
+rs=[above(r,SUBJ_TOP) for r in rs]
 for art,r in zip([prewhite(cv2.imread(d0)),prewhite(cv2.imread(d1))],rs):
-    p=place(p,art,r,fill=0.97)                                           # drawings fill the sheets; titles may overlap them a little
+    p=place(p,art,r,fill=0.97)                                           # drawings fill the uncovered part of each sheet
 c=Image.fromarray(cv2.cvtColor(p,cv2.COLOR_BGR2RGB)).convert('RGBA')
 def put(path,w,xy,anchor='tl'):
     im=Image.open(path).convert('RGBA'); a=np.asarray(im)[...,3]; ys,xs=np.where(a>40); im=im.crop((xs.min(),ys.min(),xs.max()+1,ys.max()+1))

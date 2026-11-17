@@ -1,6 +1,7 @@
 """Patch a delivered episode: swap in a re-rendered first part (intro + wipe + lesson start) and the wipe's new dialogue, keep the rest untouched.
-usage: sab_patch.py <slug> <old_final.mp4> <new_final.mp4>   (needs W/vo for every segment in groups.json[0])"""
+usage: sab_patch.py <slug> <old_final.mp4> <new_final.mp4> [--video-only]   (--video-only keeps the old audio as is; needs W/vo for every segment in groups.json[0])"""
 import json, os, sys, subprocess, wave, numpy as np
+VIDEO_ONLY='--video-only' in sys.argv; sys.argv=[a for a in sys.argv if a!='--video-only']
 slug,old,new=sys.argv[1:4]; W=os.path.join(os.path.expanduser(os.environ.get('SAB_WORK','~/sab/eps')),slug); A=os.path.join(os.path.expanduser(os.environ.get('SAB_SSD','~/sab-data')),'SAB-production','assets','look-c')
 edl=json.load(open(W+'/edl.json')); K=edl.get('out_k',1); F=json.load(open(W+'/finalize.json')); G=json.load(open(W+'/groups.json'))
 def vdur(f): return float(subprocess.check_output(['ffprobe','-v','error','-select_streams','v','-show_entries','stream=duration','-of','csv=p=0',f]))
@@ -15,6 +16,10 @@ if not os.path.exists(p0):
 print('T1',round(T1,3),'p00',round(vdur(p0),3))
 tail=W+'/tail.mp4'
 if not os.path.exists(tail): subprocess.run(['ffmpeg','-nostdin','-v','error','-ss',str(T1),'-i',old,'-map','0:v','-c','copy','-y',tail],check=True)
+if VIDEO_ONLY:
+    open(W+'/patch_list.txt','w').write(f"file '{p0}'\nfile '{tail}'\n")
+    subprocess.run(['ffmpeg','-nostdin','-v','error','-f','concat','-safe','0','-i',W+'/patch_list.txt','-i',old,'-map','0:v','-map','1:a','-c','copy','-movflags','+faststart','-y',new],check=True)
+    print('patched (video only)', subprocess.check_output(['ffprobe','-v','error','-show_entries','stream=codec_type,duration','-of','csv=p=0',new]).decode().split()); sys.exit(0)
 # audio: old mix with the wipe region replaced by the lesson's lead-in dialogue
 subprocess.run(['ffmpeg','-nostdin','-v','error','-i',old,'-vn','-ac','2','-ar','48000','-y',W+'/old_audio.wav'],check=True)
 def rd(p): w=wave.open(p); return np.frombuffer(w.readframes(w.getnframes()),np.int16).astype(np.float32).reshape(-1,2)

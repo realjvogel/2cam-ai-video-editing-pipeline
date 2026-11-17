@@ -1,4 +1,4 @@
-"""1930s iris: closes on the adult's face (front cam), black beat, opens on the outro video. usage: sab_iris.py <slug> <a_raw>"""
+"""1930s iris: closes on the adult's face (front cam) to a dot, opens on the outro video. usage: sab_iris.py <slug> <a_raw>"""
 import cv2, numpy as np, subprocess, os, sys, json
 slug,a=sys.argv[1],float(sys.argv[2]); SSD=os.path.expanduser(os.environ.get('SAB_SSD','~/sab-data')); E=f'{SSD}/SAB-production/episodes/{slug}'; W=os.path.join(os.path.expanduser(os.environ.get('SAB_WORK','~/sab/eps')),slug)
 prep=json.load(open(W+'/prep.json')); edl=json.load(open(W+'/edl.json')); K=edl.get('out_k',1); OW,OH,N=1920*K,1080*K,24
@@ -17,8 +17,8 @@ circ=lambda cx,cy,r:(np.hypot(xx-cx,yy-cy)<=r).astype(np.float32)[...,None]
 enc=subprocess.Popen(['ffmpeg','-v','error','-f','rawvideo','-pix_fmt','bgr24','-s',f'{OW}x{OH}','-r','24','-i','-','-an','-c:v','libx264','-preset','veryfast','-crf','18','-pix_fmt','yuv420p','-y',W+'/vo/iris.mp4.tmp.mp4'],stdin=subprocess.PIPE)
 for k in range(N):
     t=k/(N-1)
-    if t<0.45: f=A[k]*circ(fx,fy,R*(1-t/0.45)**1.6)
-    elif t<0.55: f=np.zeros((OH,OW,3))
-    else: f=B[k]*circ(OW/2,OH/2,R*((t-0.55)/0.45)**1.2)
+    # close to a small dot and open straight from one (no held black: QA flags >0.3 s of black)
+    if t<0.5: f=A[k]*circ(fx,fy,R*max(0.025,(1-t/0.5)**1.6))
+    else: f=B[k]*circ(OW/2,OH/2,R*max(0.025,((t-0.5)/0.5)**1.2))
     enc.stdin.write(f.astype(np.uint8).tobytes())
 enc.stdin.close(); enc.wait(); os.rename(W+'/vo/iris.mp4.tmp.mp4',W+'/vo/iris.mp4'); print('iris ok')

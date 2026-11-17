@@ -26,12 +26,17 @@ class Cams:
     def sm(p): p=min(max(p,0),1); return p*p*(3-2*p)
     def cam(self,t):
         b=self.base(t)
-        for w in self.win:   # w: {t_in, t_out, first:'L'|'R', switch: t or null}
+        for w in self.win:   # w: {t_in, t_out, first:'L'|'R' (adult), switch: t | null, sides: [[t,side],..] (wins)}
             i0,o1=w['t_in'],w['t_out']; i1,o0=i0+1.2,o1-1.2
             if i0<=t<=o1:
                 k=self.sm((t-i0)/1.2) if t<i1 else (1-self.sm((t-o0)/1.2) if t>o0 else 1)
                 s1=w['first']; s2='R' if s1=='L' else 'L'; sw=w.get('switch')
-                if sw and t>=sw: D=self.target(s1,t)*(1-self.sm((t-sw)/1.4))+self.target(s2,t)*self.sm((t-sw)/1.4)
+                if w.get('sides'):   # [[t, side], ...] from sab_edl (adult hand tracking); glide 1.4 s at each change
+                    sd=w['sides']; j=max(i for i in range(len(sd)) if sd[i][0]<=t) if t>=sd[0][0] else 0
+                    cur=self.target(sd[j][1],t)
+                    if j>0 and t<sd[j][0]+1.4: p=self.sm((t-sd[j][0])/1.4); D=self.target(sd[j-1][1],t)*(1-p)+cur*p
+                    else: D=cur
+                elif sw and t>=sw: D=self.target(s1,t)*(1-self.sm((t-sw)/1.4))+self.target(s2,t)*self.sm((t-sw)/1.4)
                 else: D=self.target(s1,t)
                 return b*(1-k)+D*k
         return b

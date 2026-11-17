@@ -3,10 +3,11 @@ usage: sab_wipe.py <slug>   -> W/vo/wipe.mp4"""
 import cv2, numpy as np, subprocess, json, os, sys
 sys.path.insert(0,os.path.dirname(os.path.abspath(__file__)))
 from sab_cams import Cams
+from sab_faces import face_safe
 slug=sys.argv[1]; W=os.path.join(os.path.expanduser(os.environ.get('SAB_WORK','~/sab/eps')),slug)
 edl=json.load(open(W+'/edl.json')); prep=json.load(open(W+'/prep.json')); K=edl.get('out_k',1); OW,OH,SW,SH=1920*K,1080*K,3840,2160
 s=[x for x in edl['segments'] if x['role']=='wipe'][0]; d=s['b']-s['a']; N=int(round(d*24)); C=Cams(W,edl)
-z,cx,cy=edl['intro_shots'][-1][3] if edl.get('intro_shots') else (1,.5,.5)
+z,cx,cy=face_safe(*(edl['intro_shots'][-1][3] if edl.get('intro_shots') else (1,.5,.5)),edl.get('head_boxes'))   # same framing as the intro's last frame
 def frames(src,ss,vf):
     p=subprocess.Popen(['ffmpeg','-v','error','-ss',str(ss),'-t',str(d+0.5),'-i',src,'-vf',vf,'-f','rawvideo','-pix_fmt','bgr24','-'],stdout=subprocess.PIPE); out=[]
     while len(out)<N:
