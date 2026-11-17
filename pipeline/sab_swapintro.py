@@ -14,6 +14,15 @@ A = os.path.join(os.path.expanduser(os.environ.get('SAB_SSD', '~/sab-data')), 'S
 edl = json.load(open(W + '/edl.json')); K = edl.get('out_k', 1); F = json.load(open(W + '/finalize.json'))
 seg = [s for s in edl['segments'] if s['role'] == 'intro'][0]; keep = seg.get('keep') or [[seg['a'], seg['b']]]
 T = tempfile.mkdtemp(dir=W); SR = 48000
+def duck(x, edl, SR=48000):
+    """Lower the dialogue in edl['duck'] ranges ([raw_a, raw_b, dB], e.g. the adult's short reply) instead of cutting it,
+    so the picture stays continuous. 60 ms ramps."""
+    x = x.copy(); r = int(0.06 * SR)
+    for a, b, db in edl.get('duck', []):
+        i0, i1 = int(a * SR), int(b * SR); g = 10 ** (db / 20); env = np.ones(i1 - i0 + 2 * r, np.float32) * g
+        env[:r] = np.linspace(1, g, r); env[-r:] = np.linspace(g, 1, r); j0 = max(0, i0 - r); env = env[j0 - (i0 - r):]
+        x[j0:j0 + len(env)] *= env[:len(x) - j0, None]
+    return x
 def run(a): subprocess.run(['ffmpeg', '-nostdin', '-v', 'error'] + a, check=True)
 def vdur(f): return float(subprocess.check_output(['ffprobe', '-v', 'error', '-select_streams', 'v', '-show_entries', 'stream=duration', '-of', 'csv=p=0', f]))
 def rd(p): w = wave.open(p); return np.frombuffer(w.readframes(w.getnframes()), np.int16).astype(np.float32).reshape(-1, w.getnchannels())
@@ -34,6 +43,7 @@ run(['-i', 'concat:' + '|'.join(ts), '-c', 'copy', '-y', T + '/v.mp4'])
 # 3) audio: mix.wav's opening up to the first keep end is identical (stinger + welcome); the rest of the intro from dlg48
 mix = rd(W + '/mix.wav'); dlg = rd(W + '/dlg48.wav')
 if dlg.shape[1] == 1: dlg = np.repeat(dlg, 2, 1)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 run(['-i', old, '-vn', '-ac', '2', '-ar', str(SR), '-y', T + '/old.wav']); oa = rd(T + '/old.wav')
 # The old mix's intro may have different cuts, so only its music is reused: music = mix - dialogue over the old
 # intro's first piece (dialogue is placed at gain 1.0 in the mix), which holds the whole stinger.
@@ -42,6 +52,7 @@ nm = int(round(min(old_first, keep[0][1] - keep[0][0]) * SR)); a0 = int(round(ke
 music = mix[:nm] - dlg[a0:a0 + nm]
 ref = slice(int(0.5 * SR), nm - int(0.2 * SR))
 g = float(np.sqrt((oa[ref] ** 2).mean() / max(1e-9, (mix[ref] ** 2).mean())))      # loudnorm ran in linear mode: one gain
+dlg = duck(dlg, edl)   # the adult's short reply lowered, not cut
 parts = [dlg[int(round(x * SR)):int(round(y * SR))] for x, y in keep]
 f = int(0.01 * SR); r = np.linspace(0, 1, f)[:, None]
 for i in range(len(parts) - 1): parts[i] = parts[i].copy(); parts[i][-f:] *= r[::-1]; parts[i + 1] = parts[i + 1].copy(); parts[i + 1][:f] *= r

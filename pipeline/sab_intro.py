@@ -15,6 +15,9 @@ def l2r(t):   # local intro seconds -> raw front-cam (top-clock) seconds, skippi
 RF=lambda n: int(round((l2r(n/24)-a)*24))   # raw frame index (from the intro start) for output frame n
 K=edl.get('out_k',1); SW,SH,OW,OH,FPS=3840,2160,1920*K,1080*K,24; ti=edl['title']
 shots=edl['intro_shots']   # [t0,t1,[z,cx,cy],[z,cx,cy],ease] in local intro seconds
+# face-safe framing is solved once per shot endpoint, then eased between: solving it every frame made the framing
+# snap between grid positions (shake) and could drop the zoom level mid-shot (a second zoom)
+shots=[[t0,t1,list(face_safe(*v0,edl.get('head_boxes'))),list(face_safe(*v1,edl.get('head_boxes'))),k] for t0,t1,v0,v1,k in shots]
 def ease(p,k): p=min(max(p,0),1); return p*p*(3-2*p) if k=='smooth' else (1-(1-p)**3 if k=='out' else p)
 def cam(t):
     for s0 in shots:
@@ -80,7 +83,7 @@ while True:
         if len(bb)<SW*SH*3 or len(aa)<1920*1080: break
     if len(bb)<SW*SH*3 or len(aa)<1920*1080: break
     f=np.frombuffer(bb,np.uint8).reshape(SH,SW,3); al=np.frombuffer(aa,np.uint8).reshape(1080,1920)
-    t=n/FPS; z,cx,cy=face_safe(*cam(t),edl.get('head_boxes')); cw,ch=SW/z,SH/z; x=min(max(cx*SW-cw/2,0),SW-cw); y=min(max(cy*SH-ch/2,0),SH-ch); s=OW/cw
+    t=n/FPS; z,cx,cy=cam(t); cw,ch=SW/z,SH/z; x=min(max(cx*SW-cw/2,0),SW-cw); y=min(max(cy*SH-ch/2,0),SH-ch); s=OW/cw
     src=cv2.GaussianBlur(f,(0,0),0.42/s) if 1/s>1.25 else f
     out=cv2.warpAffine(src,np.float32([[s,0,-x*s],[0,s,-y*s]]),(OW,OH),flags=cv2.INTER_LINEAR,borderMode=cv2.BORDER_REFLECT).astype(np.float32)
     A=cv2.warpAffine(al,np.float32([[2*s,0,-x*s],[0,2*s,-y*s]]),(OW,OH),flags=cv2.INTER_LINEAR).astype(np.float32)[...,None]/255

@@ -78,7 +78,7 @@ for z in cfg.get('zooms',[]):
     z=dict(z); sc=side_schedule(z)
     if sc: z['sides']=sc; print('zoom',z['t_in'],z['t_out'],'sides',sc)
     zooms.append(z)
-it=cfg.get('intro',{}); edl=dict(slug=slug,out_k=cfg.get('out_k',2),header=cfg.get('header','video-how-to-draw-a.png'),faces=cfg['faces'],head_boxes=cfg.get('head_boxes'),zooms=zooms,frame_margin=cfg.get('frame_margin',0.035),
+it=cfg.get('intro',{}); edl=dict(slug=slug,out_k=cfg.get('out_k',2),header=cfg.get('header','video-how-to-draw-a.png'),faces=cfg['faces'],head_boxes=cfg.get('head_boxes'),duck=cfg.get('duck',[]),zooms=zooms,frame_margin=cfg.get('frame_margin',0.035),
     title=it.get('title'),intro_shots=it.get('shots'),music=cfg['music'],segments=S)
 json.dump(edl,open(W+'/edl.json','w'),indent=1)
 dur=sum((s['b']-s['a'])/s.get('speed',1) for s in S); print(len(S),'segments, %d:%02d'%(dur//60,dur%60))

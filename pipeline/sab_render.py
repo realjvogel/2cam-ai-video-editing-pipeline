@@ -56,6 +56,15 @@ def render(s):
     else: return False
     if r.returncode: print(s['name'],'ERR',r.stderr[-400:]); return False
     os.rename(tmp,out); print(s['name'],'ok',round(time.time()-T0)); return True
+def duck(x, edl, SR=48000):
+    """Lower the dialogue in edl['duck'] ranges ([raw_a, raw_b, dB], e.g. the adult's short reply) instead of cutting it,
+    so the picture stays continuous. 60 ms ramps."""
+    x = x.copy(); r = int(0.06 * SR)
+    for a, b, db in edl.get('duck', []):
+        i0, i1 = int(a * SR), int(b * SR); g = 10 ** (db / 20); env = np.ones(i1 - i0 + 2 * r, np.float32) * g
+        env[:r] = np.linspace(1, g, r); env[-r:] = np.linspace(g, 1, r); j0 = max(0, i0 - r); env = env[j0 - (i0 - r):]
+        x[j0:j0 + len(env)] *= env[:len(x) - j0, None]
+    return x
 def norm_mix():
     # two-pass loudnorm: measure, then apply linearly (one-pass lands ~1.5 LU quiet on these mixes)
     m=subprocess.run(['ffmpeg','-nostdin','-hide_banner','-i',W+'/mix.wav','-af','highpass=f=70,loudnorm=I=-14:TP=-1.5:LRA=11:print_format=json','-f','null','-'],capture_output=True,text=True).stderr
@@ -77,7 +86,7 @@ elif mode=='assemble':
     SR=48000
     def rd(p): w=wave.open(p); return np.frombuffer(w.readframes(w.getnframes()),np.int16).astype(np.float32).reshape(-1,2)/32768
     def vdur(f): return float(subprocess.check_output(['ffprobe','-v','error','-select_streams','v','-show_entries','stream=duration','-of','csv=p=0',f]))
-    S=edl['segments']; dlg=rd(W+'/dlg48.wav'); mus=rd(W+'/music48.wav')
+    S=edl['segments']; dlg=duck(rd(W+'/dlg48.wav'),edl); mus=rd(W+'/music48.wav')
     durs=[vdur(f"{W}/vo/{s['name']}.mp4") for s in S]; N=int(round(sum(durs)*SR)); out=np.zeros((N,2),np.float32)
     def place(buf,pos,gain=1.0,fin=0.01,fout=0.01):
         n=min(len(buf),N-pos); bb=buf[:n].copy()*gain; fi=int(fin*SR); fo=int(fout*SR)
