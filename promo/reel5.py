@@ -1,6 +1,6 @@
 import subprocess, os, sys
 SSD=os.path.expanduser('~/sab-data')
-FIN=f'{SSD}/SAB - auto edits/How To Draw A Popsicle & Cone With Kid B - v2.mp4'
+FIN=f'{SSD}/SAB - auto edits/How To Draw A Popsicle & Cone With Kid B - v3.mp4'
 FRONT=f'{SSD}/Projects/IMG_0265.mov'; TOP=f'{SSD}/Projects/IMG_0013.mov'
 RAG=f'{SSD}/Projects/Cartoon_Band_Rag.m4a'
 T=0.35

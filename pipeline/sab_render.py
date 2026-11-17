@@ -37,8 +37,8 @@ def render(s):
     elif cam=='top':
         r=sh(['python3',os.path.dirname(os.path.abspath(__file__))+'/sab_camrender.py',W,W+'/edl.json',top,str(a),str(d),tmp])
     elif cam=='wipe':
-        r=sh(['ffmpeg','-nostdin','-v','error','-ss',str(a+OFF),'-t',str(d),'-i',front,'-ss',str(s['top_a']),'-t',str(d),'-i',top,'-filter_complex',
-          f"[0:v]{FLIP}scale={OWs}:{OHs},fps=24,setpts=PTS-STARTPTS[f];[1:v]{crop(*C.base(s['top_a']+d))},fps=24,setpts=PTS-STARTPTS[t];[f][t]xfade=transition=diagtl:duration={d-0.05:.2f}:offset=0[v]",'-map','[v]','-t',str(d)]+ENC+['-y',tmp])
+        r=sh(['python3',os.path.dirname(os.path.abspath(__file__))+'/sab_wipe.py',slug])
+        return r.returncode==0 and os.path.exists(out)
     elif cam=='review':
         r=sh(['ffmpeg','-nostdin','-v','error','-ss',str(a),'-t',str(d),'-i',top,'-ss',str(a+OFF),'-t',str(d),'-i',front,'-i',A+'/pip3_shadow.png','-i',A+'/pip3_border.png','-i',A+'/pip3_mask.png','-filter_complex',
           f"[0:v]setpts=PTS-STARTPTS,fps=24,{review_crop((a+b)/2)}[b];[1:v]setpts=PTS-STARTPTS,fps=24,{FLIP}{pip_crop()},format=rgba[f];[4:v]format=gray,scale={520*K}:{325*K}[mk];[f][mk]alphamerge[fm];[2:v]scale={OWs}:{OHs}[sh];[3:v]scale={OWs}:{OHs}[bd];[b][sh]overlay=0:0[s];[s][fm]overlay={1380*K}:{712*K}[x];[x][bd]overlay=0:0,format=yuv420p[v]",'-map','[v]','-t',str(d)]+ENC+['-y',tmp])
@@ -53,6 +53,11 @@ if mode=='segments':
         if time.time()-T0>BUD: break
         render(s)
     miss=[s['name'] for s in edl['segments'] if not os.path.exists(f"{W}/vo/{s['name']}.mp4")]; print('missing',miss)
+elif mode=='only':   # render just the named segments (used to patch a delivered episode)
+    want=sys.argv[4:]
+    for s in edl['segments']:
+        if s['name'] in want and time.time()-T0<BUD: render(s)
+    print('missing',[n for n in want if not os.path.exists(f"{W}/vo/{n}.mp4")])
 elif mode=='assemble':
     SR=48000
     def rd(p): w=wave.open(p); return np.frombuffer(w.readframes(w.getnframes()),np.int16).astype(np.float32).reshape(-1,2)/32768
@@ -64,12 +69,13 @@ elif mode=='assemble':
         if fi: bb[:fi]*=np.linspace(0,1,fi)[:,None]
         if fo: bb[-fo:]*=np.linspace(1,0,fo)[:,None]
         out[pos:pos+n]+=bb
-    t=0.0; marks={}
+    t=0.0; marks={}; prev_role=None
     for s,d in zip(S,durs):
         p=int(round(t*SR)); n=int(round(d*SR)); marks[s['name']]=(p,n)
-        if s['role'] not in ('montage','outro_video','wipe'):
-            st=int(round(s['a']*SR)); place(dlg[st:st+n],p,1.0,0.01,0.5 if s['role']=='iris' else 0.01)
-        t+=d
+        if s['role'] not in ('montage','outro_video'):
+            st=int(round(s['a']*SR)); first_draw=(s['role']=='draw' and prev_role=='wipe')
+            place(dlg[st:st+n],p,1.0,0.25 if first_draw else 0.01,0.5 if s['role'] in ('iris','wipe') else 0.01)
+        t+=d; prev_role=s['role']
     M=edl['music']
     if M.get('stinger'): place(mus[:int(3.5*SR)],0,0.28,0.02,1.2)
     mon=[s['name'] for s in S if s['role']=='montage']; m0=marks[mon[0]][0]; m1=marks[mon[-1]][0]+marks[mon[-1]][1]
