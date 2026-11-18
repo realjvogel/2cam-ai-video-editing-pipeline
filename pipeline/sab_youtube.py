@@ -13,7 +13,7 @@ usage:
   sab_youtube.py auth-code '<redirect URL>'       exchange the code from that URL for a token
   sab_youtube.py list                             every video on the channel: id, privacy, publishAt, title
   sab_youtube.py thumb <videoId> <image.jpg>      set the custom thumbnail (jpg/png, <= 2 MB)
-  sab_youtube.py update <videoId> [--title T] [--desc-file F] [--kids] [--private] [--publish-at 2026-12-05T14:00:00Z]
+  sab_youtube.py update <videoId> [--title T] [--desc-file F] [--tags 'a,b,c'] [--kids] [--private] [--publish-at 2026-12-05T14:00:00Z]
   sab_youtube.py match '<text>'                   video ids whose title contains text (case-insensitive)
 """
 import json, os, sys, time, urllib.parse, urllib.request, urllib.error
@@ -58,8 +58,9 @@ def access_token():
     c = client()
     body = urllib.parse.urlencode(dict(client_id=c['client_id'], client_secret=c['client_secret'],
                                        refresh_token=t['refresh_token'], grant_type='refresh_token')).encode()
-    save_token(http('POST', c['token_uri'], body, {'Content-Type': 'application/x-www-form-urlencoded'}))
-    return json.load(open(TOKEN))['access_token']
+    new = http('POST', c['token_uri'], body, {'Content-Type': 'application/x-www-form-urlencoded'})
+    save_token(new)
+    return new['access_token']   # don't re-read the file: the SSD can lag on a fresh write
 
 def api(method, path, params=None, body=None):
     url = f'{API}/{path}?' + urllib.parse.urlencode(params or {})
@@ -122,6 +123,7 @@ def main(a):
             if o == '--title': sn['title'] = a[i + 1]; i += 2
             elif o == '--desc-file': sn['description'] = open(a[i + 1]).read().strip(); i += 2
             elif o == '--kids': st['selfDeclaredMadeForKids'] = True; i += 1
+            elif o == '--tags': sn['tags'] = [t.strip() for t in a[i + 1].split(',') if t.strip()]; i += 2
             elif o == '--private': st['privacyStatus'] = 'private'; st.pop('publishAt', None); i += 1
             elif o == '--publish-at': st['privacyStatus'] = 'private'; st['publishAt'] = a[i + 1]; i += 2   # scheduled: private until then
             else: sys.exit('unknown option ' + o)
