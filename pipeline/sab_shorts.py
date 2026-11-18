@@ -146,7 +146,7 @@ if kind in ('timelapse', 'facts'):
     if kind == 'facts':
         vo = O + '/vo.wav'
         if not os.path.exists(vo): tts(open(O + '/facts.txt').read().strip(), vo)
-        t_end = max(t_end, dur(vo) + 1.0 - OPEN)  # never cut the voiceover off; the timelapse just runs slower
+        t_end = dur(vo) + 1.2 - OPEN  # fit the drawing to the voiceover: the ending lands right after the last line
     total = OPEN + t_end + END
     # audio: music bed (quiet under a voiceover), fade out; voiceover starts at 0.4 s, over the opener
     af = f"atrim=0:{total},afade=t=in:d=0.5,afade=t=out:st={total - 2}:d=2,loudnorm=I={-30 if vo else -19}:TP=-3"

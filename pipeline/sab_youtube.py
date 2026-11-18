@@ -14,6 +14,7 @@ usage:
   sab_youtube.py list                             every video on the channel: id, privacy, publishAt, title
   sab_youtube.py thumb <videoId> <image.jpg>      set the custom thumbnail (jpg/png, <= 2 MB)
   sab_youtube.py update <videoId> [--title T] [--desc-file F] [--tags 'a,b,c'] [--kids] [--private] [--publish-at 2026-12-05T14:00:00Z]
+                         [--category 27] [--synthetic] [--meta shorts/<slug>-meta.json]   (Shorts: --meta sets title, description, tags, Education, made for kids, AI-voice label)
   sab_youtube.py match '<text>'                   video ids whose title contains text (case-insensitive)
 """
 import json, os, sys, time, urllib.parse, urllib.request, urllib.error
@@ -115,7 +116,7 @@ def main(a):
     elif cmd == 'update':
         vid = a[1]; v = api('GET', 'videos', {'part': 'snippet,status', 'id': vid})['items'][0]
         sn = {k: v['snippet'][k] for k in ('title', 'description', 'categoryId', 'tags', 'defaultLanguage') if k in v['snippet']}
-        st = {k: v['status'][k] for k in ('privacyStatus', 'publishAt', 'embeddable', 'license', 'publicStatsViewable') if k in v['status']}
+        st = {k: v['status'][k] for k in ('privacyStatus', 'publishAt', 'embeddable', 'license', 'publicStatsViewable', 'containsSyntheticMedia') if k in v['status']}
         st['selfDeclaredMadeForKids'] = v['status'].get('madeForKids', True)
         i = 2
         while i < len(a):
@@ -126,6 +127,13 @@ def main(a):
             elif o == '--tags': sn['tags'] = [t.strip() for t in a[i + 1].split(',') if t.strip()]; i += 2
             elif o == '--private': st['privacyStatus'] = 'private'; st.pop('publishAt', None); i += 1
             elif o == '--publish-at': st['privacyStatus'] = 'private'; st['publishAt'] = a[i + 1]; i += 2   # scheduled: private until then
+            elif o == '--category': sn['categoryId'] = a[i + 1]; i += 2
+            elif o == '--synthetic': st['containsSyntheticMedia'] = True; i += 1   # "altered or synthetic content" (the AI voice)
+            elif o == '--meta':   # JSON with title, description, tags, category, synthetic (shorts/<slug>-meta.json)
+                m = json.load(open(a[i + 1])); i += 2
+                sn['title'] = m['title']; sn['description'] = m['description']; sn['tags'] = m['tags']; sn['categoryId'] = m.get('category', '27')
+                st['selfDeclaredMadeForKids'] = True
+                if m.get('synthetic'): st['containsSyntheticMedia'] = True
             else: sys.exit('unknown option ' + o)
         r = api('PUT', 'videos', {'part': 'snippet,status'}, {'id': vid, 'snippet': sn, 'status': st})
         print('updated', vid, r['status']['privacyStatus'], r['status'].get('publishAt', '-'), r['snippet']['title'])
