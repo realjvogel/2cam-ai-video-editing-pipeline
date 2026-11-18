@@ -1,6 +1,6 @@
 """Swap a new intro into a delivered final (e.g. a cut restored or removed inside the intro), keeping everything
 after it as delivered.
-usage: SAB_OLD_FIRST=<seconds of the old intro's first uncut piece> sab_swapintro.py <slug> <old_final.mp4> <new_final.mp4> <old_intro_seconds> <old_title_out_local>
+usage: SAB_OLD_FIRST=<seconds of the old intro's first uncut piece> [SAB_OLD_START=<raw start of the old intro>] sab_swapintro.py <slug> <old_final.mp4> <new_final.mp4> <old_intro_seconds> <old_title_out_local>
 Needs W/vo/intro.mp4 (new) and W/vo/wipe.mp4, W/mix.wav (the episode's pre-loudness mix, which starts with the
 same stinger + welcome), W/dlg48.wav, W/edl.json (new intro keep ranges), W/finalize.json (bug timing).
 Video: new intro (+ wordmark bug from the new title end) + old final from the old intro's end; only the stretch up
@@ -48,7 +48,9 @@ run(['-i', old, '-vn', '-ac', '2', '-ar', str(SR), '-y', T + '/old.wav']); oa = 
 # The old mix's intro may have different cuts, so only its music is reused: music = mix - dialogue over the old
 # intro's first piece (dialogue is placed at gain 1.0 in the mix), which holds the whole stinger.
 old_first = float(os.environ.get('SAB_OLD_FIRST', '0')) or (keep[0][1] - keep[0][0])
-nm = int(round(min(old_first, keep[0][1] - keep[0][0]) * SR)); a0 = int(round(keep[0][0] * SR))
+old_start = float(os.environ.get('SAB_OLD_START', '0')) or keep[0][0]   # raw time the old intro (and its sting) started
+nm = int(round(min(old_first, keep[0][1] - old_start) * SR)); a0 = int(round(old_start * SR))
+mo = int(round((old_start - keep[0][0]) * SR))                             # the sting stays where the old intro began
 music = mix[:nm] - dlg[a0:a0 + nm]
 ref = slice(int(0.5 * SR), nm - int(0.2 * SR))
 g = float(np.sqrt((oa[ref] ** 2).mean() / max(1e-9, (mix[ref] ** 2).mean())))      # loudnorm ran in linear mode: one gain
@@ -56,14 +58,15 @@ dlg = duck(dlg, edl)   # the adult's short reply lowered, not cut
 parts = [dlg[int(round(x * SR)):int(round(y * SR))] for x, y in keep]
 f = int(0.01 * SR); r = np.linspace(0, 1, f)[:, None]
 for i in range(len(parts) - 1): parts[i] = parts[i].copy(); parts[i][-f:] *= r[::-1]; parts[i + 1] = parts[i + 1].copy(); parts[i + 1][:f] *= r
-body = np.concatenate(parts); body[:len(music)] += music
+body = np.concatenate(parts); body[mo:mo + len(music)] += music
 intro_a = body * g; ni = int(round(new_intro * SR))
 intro_a = np.pad(intro_a, ((0, max(0, ni - len(intro_a))), (0, 0)))[:ni]
 # same limiter as the full mix (the delivered audio already went through it; the new intro hasn't)
 w = wave.open(T + '/i.wav', 'wb'); w.setnchannels(2); w.setsampwidth(2); w.setframerate(SR); w.writeframes(np.clip(intro_a, -32768, 32767).astype(np.int16).tobytes()); w.close()
-run(['-i', T + '/i.wav', '-af', 'alimiter=limit=0.75:level=false', '-ar', str(SR), '-y', T + '/il.wav']); intro_a = rd(T + '/il.wav')[:ni]
+run(['-i', T + '/i.wav', '-af', 'alimiter=limit=0.7:level=false', '-ar', str(SR), '-y', T + '/il.wav']); intro_a = rd(T + '/il.wav')[:ni]
 out = np.concatenate([intro_a, oa[int(round(old_intro * SR)):]])
 w = wave.open(T + '/n.wav', 'wb'); w.setnchannels(2); w.setsampwidth(2); w.setframerate(SR); w.writeframes(np.clip(out, -32768, 32767).astype(np.int16).tobytes()); w.close()
-run(['-i', T + '/v.mp4', '-i', T + '/n.wav', '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', '-y', new])
+run(['-i', T + '/n.wav', '-af', 'alimiter=limit=0.75:level=false', '-ar', str(SR), '-y', T + '/nl.wav'])   # re-encoding the old AAC adds overshoot
+run(['-i', T + '/v.mp4', '-i', T + '/nl.wav', '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', '-y', new])
 for p in os.listdir(T): os.remove(os.path.join(T, p))
 os.rmdir(T); print('gain %.3f' % g, 'new intro %.3f s (was %.3f)' % (new_intro, old_intro), subprocess.check_output(['ffprobe', '-v', 'error', '-show_entries', 'stream=codec_type,duration', '-of', 'csv=p=0', new]).decode().split())
