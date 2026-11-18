@@ -70,7 +70,7 @@ def eleven_voice():
     if os.path.exists(f): return json.load(open(f))['voice_id']
     b = '----sab' + uuid.uuid4().hex; wav = R + '/voice/josh_voice_sample.wav'
     body = (f'--{b}\r\nContent-Disposition: form-data; name="name"\r\n\r\nJosh (Super Art Bros)\r\n'
-            f'--{b}\r\nContent-Disposition: form-data; name="remove_background_noise"\r\n\r\ntrue\r\n'
+            f'--{b}\r\nContent-Disposition: form-data; name="remove_background_noise"\r\n\r\nfalse\r\n'
             f'--{b}\r\nContent-Disposition: form-data; name="files"; filename="josh.wav"\r\nContent-Type: audio/wav\r\n\r\n').encode() + open(wav, 'rb').read() + f'\r\n--{b}--\r\n'.encode()
     req = urllib.request.Request('https://api.elevenlabs.io/v1/voices/add', data=body, headers={'xi-api-key': secret('ELEVENLABS_API_KEY'), 'Content-Type': 'multipart/form-data; boundary=' + b})
     vid = json.load(urllib.request.urlopen(req, timeout=180))['voice_id']; json.dump({'voice_id': vid}, open(f, 'w')); return vid

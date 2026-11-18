@@ -23,7 +23,7 @@ if os.path.exists(cache):
 else:
     b = '----sab' + uuid.uuid4().hex
     body = (f'--{b}\r\nContent-Disposition: form-data; name="name"\r\n\r\nJosh (Super Art Bros)\r\n'
-            f'--{b}\r\nContent-Disposition: form-data; name="remove_background_noise"\r\n\r\ntrue\r\n'
+            f'--{b}\r\nContent-Disposition: form-data; name="remove_background_noise"\r\n\r\nfalse\r\n'
             f'--{b}\r\nContent-Disposition: form-data; name="files"; filename="{os.path.basename(sample)}"\r\nContent-Type: audio/mpeg\r\n\r\n').encode() \
         + open(sample, 'rb').read() + f'\r\n--{b}--\r\n'.encode()
     vid = json.loads(call('/v1/voices/add', body, 'multipart/form-data; boundary=' + b))['voice_id']
