@@ -58,15 +58,38 @@ def art_card(bg, path, lettering):
     a, b = card(E + '/drawing_0.png', 610, 3), card(E + '/drawing_1.png', 610, -3); x = (VW - a.width - b.width + 30) // 2; y = 170 + t.height + 70
     shadow(a, (x, y)); shadow(b, (x + a.width - 30, y + 30)); c.save(path)
 
+def secret(name):
+    import re
+    if os.environ.get(name): return os.environ[name]
+    m = re.search(name + r'\s*=\s*(\S+)', open(R + '/secrets.env').read()); return m.group(1).strip('"\'') if m else None
+
+def eleven_voice():
+    """Josh's ElevenLabs voice id: cloned once from R/voice/josh_voice_sample.wav (clean teaching clips from the episodes), cached in R/elevenlabs_voice.json"""
+    import urllib.request, uuid
+    f = R + '/elevenlabs_voice.json'
+    if os.path.exists(f): return json.load(open(f))['voice_id']
+    b = '----sab' + uuid.uuid4().hex; wav = R + '/voice/josh_voice_sample.wav'
+    body = (f'--{b}\r\nContent-Disposition: form-data; name="name"\r\n\r\nJosh (Super Art Bros)\r\n'
+            f'--{b}\r\nContent-Disposition: form-data; name="remove_background_noise"\r\n\r\ntrue\r\n'
+            f'--{b}\r\nContent-Disposition: form-data; name="files"; filename="josh.wav"\r\nContent-Type: audio/wav\r\n\r\n').encode() + open(wav, 'rb').read() + f'\r\n--{b}--\r\n'.encode()
+    req = urllib.request.Request('https://api.elevenlabs.io/v1/voices/add', data=body, headers={'xi-api-key': secret('ELEVENLABS_API_KEY'), 'Content-Type': 'multipart/form-data; boundary=' + b})
+    vid = json.load(urllib.request.urlopen(req, timeout=180))['voice_id']; json.dump({'voice_id': vid}, open(f, 'w')); return vid
+
 def tts(text, out, voice='ash'):
-    """OpenAI text-to-speech for the fun-fact voiceover (prototype voice; Josh can record his own instead)"""
-    import urllib.request, re
-    k = os.environ.get('OPENAI_API_KEY') or re.search(r'OPENAI_API_KEY\s*=\s*(\S+)', open(R + '/secrets.env').read()).group(1).strip('"\'')
-    body = json.dumps({'model': 'gpt-4o-mini-tts', 'voice': voice, 'input': text, 'response_format': 'wav',
-                       'instructions': 'Warm, upbeat dad talking to young kids on a drawing show. Curious and playful, a little amazed by the facts. Natural pace, not rushed.'}).encode()
-    req = urllib.request.Request('https://api.openai.com/v1/audio/speech', data=body, headers={'Authorization': 'Bearer ' + k, 'Content-Type': 'application/json'})
-    open(out + '.raw.wav', 'wb').write(urllib.request.urlopen(req, timeout=120).read())
-    run(['-i', out + '.raw.wav', '-af', 'silenceremove=start_periods=1:start_threshold=-45dB', '-ar', '48000', '-ac', '2', '-y', out])
+    """Voiceover. Josh's cloned voice on ElevenLabs when ELEVENLABS_API_KEY is set (SAB_TTS=openai forces the OpenAI placeholder voice)."""
+    import urllib.request
+    if secret('ELEVENLABS_API_KEY') and os.environ.get('SAB_TTS', 'eleven') == 'eleven':
+        body = json.dumps({'text': text, 'model_id': os.environ.get('SAB_ELEVEN_MODEL', 'eleven_multilingual_v2'),
+                           'voice_settings': {'stability': 0.4, 'similarity_boost': 0.85, 'style': 0.35, 'use_speaker_boost': True}}).encode()
+        req = urllib.request.Request(f'https://api.elevenlabs.io/v1/text-to-speech/{eleven_voice()}?output_format=mp3_44100_128', data=body,
+                                     headers={'xi-api-key': secret('ELEVENLABS_API_KEY'), 'Content-Type': 'application/json'})
+        open(out + '.raw.mp3', 'wb').write(urllib.request.urlopen(req, timeout=180).read()); src = out + '.raw.mp3'
+    else:
+        body = json.dumps({'model': 'gpt-4o-mini-tts', 'voice': voice, 'input': text, 'response_format': 'wav',
+                           'instructions': 'Warm, upbeat dad talking to young kids on a drawing show. Curious and playful, a little amazed by the facts. Natural pace, not rushed.'}).encode()
+        req = urllib.request.Request('https://api.openai.com/v1/audio/speech', data=body, headers={'Authorization': 'Bearer ' + secret('OPENAI_API_KEY'), 'Content-Type': 'application/json'})
+        open(out + '.raw.wav', 'wb').write(urllib.request.urlopen(req, timeout=120).read()); src = out + '.raw.wav'
+    run(['-i', src, '-af', 'silenceremove=start_periods=1:start_threshold=-45dB', '-ar', '48000', '-ac', '2', '-y', out])
 
 def audio_norm(src_args, dur, out, music=None, fade_out=1.5):
     af = f"afade=t=out:st={max(0, dur - fade_out)}:d={fade_out},loudnorm=I=-14:TP=-2:LRA=11"
