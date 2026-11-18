@@ -79,8 +79,8 @@ def tts(text, out, voice='ash'):
     """Voiceover. Josh's cloned voice on ElevenLabs when ELEVENLABS_API_KEY is set (SAB_TTS=openai forces the OpenAI placeholder voice)."""
     import urllib.request
     if secret('ELEVENLABS_API_KEY') and os.environ.get('SAB_TTS', 'eleven') == 'eleven':
-        body = json.dumps({'text': text, 'model_id': os.environ.get('SAB_ELEVEN_MODEL', 'eleven_multilingual_v2'),
-                           'voice_settings': {'stability': 0.4, 'similarity_boost': 0.85, 'style': 0.35, 'use_speaker_boost': True}}).encode()
+        body = json.dumps({'text': text, 'model_id': os.environ.get('SAB_ELEVEN_MODEL', 'eleven_v4'),
+                           'voice_settings': {'stability': 0.5, 'similarity_boost': 0.85}}).encode()
         req = urllib.request.Request(f'https://api.elevenlabs.io/v1/text-to-speech/{eleven_voice()}?output_format=mp3_44100_128', data=body,
                                      headers={'xi-api-key': secret('ELEVENLABS_API_KEY'), 'Content-Type': 'application/json'})
         open(out + '.raw.mp3', 'wb').write(urllib.request.urlopen(req, timeout=180).read()); src = out + '.raw.mp3'
