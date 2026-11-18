@@ -76,7 +76,7 @@ if kind in ('timelapse', 'facts'):
     # Both papers sped up, cutting back and forth every SWAP seconds on the same clock (adult step, then the kid copying it).
     # Paper fills the frame on a bright sunburst; small wordmark on top; the title sits low and fades out; opens on the finished drawings + title (2 s), ends on "Draw with us today!" + both drawings.
     # facts: same, faster (SPEED), with a fun-fact voiceover (W/shorts/facts.txt -> TTS, or Josh's own recording at W/shorts/vo.wav) over a quiet music bed.
-    STYLE = os.environ.get('SAB_SHORT_BG', 'blue'); MUSIC = os.environ.get('SAB_SHORT_MUSIC', SSD + '/Projects/SAMME_Sweet_instrumental_2_02.mp3')
+    STYLE = os.environ.get('SAB_SHORT_BG', 'blue'); MUSIC = os.environ.get('SAB_SHORT_MUSIC', SSD + '/Projects/Cartoon_Swing.m4a')
     SPEED = float(os.environ.get('SAB_SHORT_SPEED', 1.4 if kind == 'facts' else 1.0))
     SWAP, TITLE, END = float(os.environ.get('SAB_SHORT_SWAP', 3.0)) / (SPEED ** .5), 3.0, 3.5
     BOX_W, BOX_Y1 = 1060, 1700           # paper box; below ~1700 the Shorts UI covers the frame
