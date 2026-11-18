@@ -1,6 +1,9 @@
 """YouTube Shorts (1080x1920, made for kids) from an episode's raw footage.
 usage:
-  sab_shorts.py <slug> timelapse                       both papers sped up, cutting adult <-> kid every 3 s (SAB_SHORT_SWAP), small wordmark, title fades, both drawings at the end
+  sab_shorts.py <slug> timelapse                       both papers sped up, cutting adult <-> kid every 3 s (SAB_SHORT_SWAP), small wordmark, title fades,
+                                                       ends on "Draw with us today!" + both drawings. SAB_SHORT_BG=blue|yellow, SAB_SHORT_MUSIC=<file>
+  sab_shorts.py <slug> facts                           same, faster (SAB_SHORT_SPEED, default 1.4), with a fun-fact voiceover from W/shorts/facts.txt (TTS)
+                                                       or Josh's own recording at W/shorts/vo.wav
   sab_shorts.py <slug> moment <raw_a> <raw_b> <captions.json> [name]
         front camera cropped tight on the kid, big captions, end card. captions.json: [[raw_t0, raw_t1, "TEXT"], ...]
 Output: W/shorts/<slug>-<kind>.mp4 (and copied to SAB - auto edits/Shorts/ by the caller)."""
@@ -17,13 +20,19 @@ def raw(p):
     return SSD + p.split('data drive', 1)[1]
 VW, VH = 1080, 1920
 
-def background(path):
-    """soft dark wood filling 9:16 with a small wordmark at the top"""
-    pl = Image.open(R + '/cache/plates/wood-clean_0.png').convert('RGB'); s = VH / pl.height
-    pl = pl.resize((int(pl.width * s), VH), Image.LANCZOS); x = (pl.width - VW) // 2
-    bg = ImageEnhance.Brightness(pl.crop((x, 0, x + VW, VH)).filter(ImageFilter.GaussianBlur(28))).enhance(0.55).convert('RGBA')
+def background(path, style='blue'):
+    """bright sunburst (blue or yellow, rotate between episodes) filling 9:16, small wordmark on top"""
+    import math
+    from PIL import ImageDraw
+    c1, c2 = {'blue': ((58, 120, 200), (78, 142, 222)), 'yellow': ((236, 178, 52), (246, 198, 82))}[style]
+    bg = Image.new('RGB', (VW, VH), c1); d = ImageDraw.Draw(bg); cx, cy, Rr, n = VW / 2, VH * .42, 3000, 24
+    for i in range(0, n, 2):
+        a0, a1 = 2 * math.pi * i / n, 2 * math.pi * (i + 1) / n
+        d.polygon([(cx, cy), (cx + Rr * math.cos(a0), cy + Rr * math.sin(a0)), (cx + Rr * math.cos(a1), cy + Rr * math.sin(a1))], fill=c2)
+    v = Image.new('L', (VW, VH), 0); ImageDraw.Draw(v).ellipse((-500, -300, VW + 500, VH + 300), fill=255); v = v.filter(ImageFilter.GaussianBlur(200))
+    bg = Image.composite(bg, Image.new('RGB', (VW, VH), tuple(int(c * .75) for c in c1)), v).convert('RGBA')
     wm = Image.open(A + '/super-art-bros-wordmark-light.png').convert('RGBA'); wm = wm.resize((230, int(wm.height * 230 / wm.width)), Image.LANCZOS)
-    bg.alpha_composite(wm, (VW // 2 - 115, 26)); bg.save(path); return 26 + wm.height
+    bg.alpha_composite(wm, (VW // 2 - 115, 26)); bg.save(path); return bg, 26 + wm.height
 
 def title_card(path, width=900):
     """'How to draw a' + subject, transparent, shown over the bottom of the paper for the first seconds"""
@@ -32,20 +41,50 @@ def title_card(path, width=900):
     im = Image.new('RGBA', (width, hd.height + sb.height - 30)); im.alpha_composite(hd, ((width - hd.width) // 2, 0)); im.alpha_composite(sb, (0, hd.height - 30))
     im.save(path); return im.height
 
+def trim(im):
+    a = np.asarray(im)[..., 3]; ys, xs = np.where(a > 8); return im.crop((xs.min(), ys.min(), xs.max() + 1, ys.max() + 1))
+
+def end_card(bg, path):
+    """'DRAW WITH US TODAY!' lettering over both finished drawings as tilted photo cards"""
+    c = bg.copy()
+    t = trim(Image.open(R + '/cache/lettering/short-draw-with-us-today_1.png').convert('RGBA')); t = t.resize((900, int(t.height * 900 / t.width)), Image.LANCZOS)
+    c.alpha_composite(t, ((VW - t.width) // 2, 170))
+    def card(f, h, rot):
+        im = Image.open(f).convert('RGB'); im = im.resize((int(im.width * h / im.height), h), Image.LANCZOS)
+        b = Image.new('RGBA', (im.width + 24, im.height + 24), (255, 255, 255, 255)); b.paste(im, (12, 12)); return b.rotate(rot, expand=True, resample=Image.BICUBIC)
+    def shadow(im, xy):
+        s = Image.new('RGBA', c.size, (0, 0, 0, 0)); s.paste((0, 0, 0, 255), (xy[0], xy[1] + 10), Image.new('L', im.size, 110))
+        c.alpha_composite(s.filter(ImageFilter.GaussianBlur(18))); c.alpha_composite(im, xy)
+    a, b = card(E + '/drawing_0.png', 660, 3), card(E + '/drawing_1.png', 660, -3); x = (VW - a.width - b.width + 30) // 2; y = 170 + t.height + 70
+    shadow(a, (x, y)); shadow(b, (x + a.width - 30, y + 30)); c.save(path)
+
+def tts(text, out, voice='ash'):
+    """OpenAI text-to-speech for the fun-fact voiceover (prototype voice; Josh can record his own instead)"""
+    import urllib.request, re
+    k = os.environ.get('OPENAI_API_KEY') or re.search(r'OPENAI_API_KEY\s*=\s*(\S+)', open(R + '/secrets.env').read()).group(1).strip('"\'')
+    body = json.dumps({'model': 'gpt-4o-mini-tts', 'voice': voice, 'input': text, 'response_format': 'wav',
+                       'instructions': 'Warm, upbeat dad talking to young kids on a drawing show. Curious and playful, a little amazed by the facts. Natural pace, not rushed.'}).encode()
+    req = urllib.request.Request('https://api.openai.com/v1/audio/speech', data=body, headers={'Authorization': 'Bearer ' + k, 'Content-Type': 'application/json'})
+    open(out + '.raw.wav', 'wb').write(urllib.request.urlopen(req, timeout=120).read())
+    run(['-i', out + '.raw.wav', '-af', 'silenceremove=start_periods=1:start_threshold=-45dB', '-ar', '48000', '-ac', '2', '-y', out])
+
 def audio_norm(src_args, dur, out, music=None, fade_out=1.5):
     af = f"afade=t=out:st={max(0, dur - fade_out)}:d={fade_out},loudnorm=I=-14:TP=-2:LRA=11"
     run(src_args + ['-t', str(dur), '-af', af, '-ar', '48000', '-ac', '2', '-y', out])
 
-if kind == 'timelapse':
+if kind in ('timelapse', 'facts'):
     # Both papers sped up, cutting back and forth every SWAP seconds on the same clock (adult step, then the kid copying it).
-    # Paper fills the frame; small wordmark on top; the title sits low and fades out after TITLE seconds; both drawings side by side at the end.
-    SWAP, TITLE, END = float(os.environ.get('SAB_SHORT_SWAP', 3.0)), 3.5, 3.0
-    BOX_W, BOX_Y0, BOX_Y1 = 1060, 0, 1700           # paper box; below ~1700 the Shorts UI covers the frame
+    # Paper fills the frame on a bright sunburst; small wordmark on top; the title sits low and fades out; ends on "Draw with us today!" + both drawings.
+    # facts: same, faster (SPEED), with a fun-fact voiceover (W/shorts/facts.txt -> TTS, or Josh's own recording at W/shorts/vo.wav) over a quiet music bed.
+    STYLE = os.environ.get('SAB_SHORT_BG', 'blue'); MUSIC = os.environ.get('SAB_SHORT_MUSIC', SSD + '/Projects/SAMME_Sweet_instrumental_2_02.mp3')
+    SPEED = float(os.environ.get('SAB_SHORT_SPEED', 1.4 if kind == 'facts' else 1.0))
+    SWAP, TITLE, END = float(os.environ.get('SAB_SHORT_SWAP', 3.0)) / (SPEED ** .5), 3.0, 3.5
+    BOX_W, BOX_Y1 = 1060, 1700           # paper box; below ~1700 the Shorts UI covers the frame
     top = raw(prep['top']); d0, d1 = cfg['beats']['draw']; c0, c1 = cfg['beats']['montage']
     P = np.array(json.load(open(W + '/papers.json'))); m = (P[:, 0] >= d0) & (P[:, 0] <= c1)
     boxes = {'adult': np.median(P[m, 1:5], 0), 'kid': np.median(P[m, 5:9], 0)}
-    wm_bottom = background(O + '/bg.png'); BOX_Y0 = wm_bottom + 14; BOX_H = BOX_Y1 - BOX_Y0
-    th = title_card(O + '/title.png')
+    bg, wm_bottom = background(O + f'/bg_{STYLE}.png', STYLE); BOX_Y0 = wm_bottom + 14; BOX_H = BOX_Y1 - BOX_Y0
+    th = title_card(O + '/title.png'); end_card(bg, O + f'/end_{STYLE}.png')
     def crop(b, aspect=BOX_W / BOX_H, pad=0.03):
         """tall crop around the paper (cover, not fit): full paper height + a little table, width from the box aspect"""
         ph = min(1.0, (b[3] - b[1]) + 2 * pad) * 2160; pw = ph * aspect
@@ -53,7 +92,7 @@ if kind == 'timelapse':
         x0 = min(max(cx - pw / 2, 0), 3840 - pw); y0 = min(max(cy - ph / 2, 0), 2160 - ph)
         return f"crop={int(pw) // 2 * 2}:{int(ph) // 2 * 2}:{int(x0)}:{int(y0)}"
     fit = f"scale={BOX_W}:{BOX_H}:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2"
-    # keyframes are 1 s apart: decoding keyframes only gives ~1 frame per source second, i.e. a ~24x timelapse at 24 fps.
+    # keyframes are 1 s apart: decoding keyframes only gives ~1 frame per source second, i.e. a ~24x timelapse at 24 fps (SPEED drops more).
     for who, b in boxes.items():
         for name, a0, a1, every in (('draw', d0, d1, 1), ('color', c0, c1, 3)):
             p = f'{O}/{name}_{who}.mp4'
@@ -62,34 +101,35 @@ if kind == 'timelapse':
                  f"select='not(mod(n\\,{every}))',setpts=N/24/TB,{crop(b)},{fit}",
                  '-r', '24', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p', '-y', p + '.tmp.mp4'])
             os.rename(p + '.tmp.mp4', p)
-    pe = f'{O}/end2.mp4'
-    if not os.path.exists(pe):
-        run(['-ss', str(c1 - 1.5), '-i', top, '-frames:v', '1', '-an', '-vf',
-             f"split[a][b];[a]{crop(boxes['adult'], 0.72, 0.012)},scale=-2:900[l];[b]{crop(boxes['kid'], 0.72, 0.012)},scale=-2:900[r];"
-             f"[l]pad=iw+20:ih:0:0:color=0x3a2a1c[l2];[l2][r]hstack=inputs=2:shortest=1,scale='min(iw,{BOX_W})':-2", '-y', O + '/end2.png'])
-        run(['-loop', '1', '-i', O + '/end2.png', '-t', str(END), '-r', '24', '-vf', 'format=yuv420p',
-             '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-y', pe])
     dur = lambda f: float(subprocess.check_output(['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', f]))
-    t_end = min(dur(O + '/draw_adult.mp4'), dur(O + '/draw_kid.mp4')) + min(dur(O + '/color_adult.mp4'), dur(O + '/color_kid.mp4')); total = t_end + END
-    audio_norm(['-i', W + '/music48.wav'], total, O + '/tl_audio.wav')
-    end_top = BOX_Y0 + 60; end_y = end_top + int(subprocess.check_output(['ffprobe', '-v', 'error', '-select_streams', 'v', '-show_entries', 'stream=height', '-of', 'csv=p=0', pe]).decode().strip())
-    ass = O + '/tl.ass'
-    open(ass, 'w').write("\n".join(["[Script Info]", "ScriptType: v4.00+", f"PlayResX: {VW}", f"PlayResY: {VH}", "", "[V4+ Styles]",
-        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-        f"Style: End,Permanent Marker,96,&H00F0E2C8,&H000000FF,&H00301A0D,&H64000000,0,0,0,0,100,100,1,0,1,9,4,8,60,60,{end_y + 40},1", "",
-        "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
-        f"Dialogue: 0,0:00:{t_end:05.2f},0:00:{total:05.2f},End,,0,0,0,,DRAW YOURS!\\NFULL LESSON ON OUR CHANNEL"]))
-    kid_on = f"lt(t,{t_end})*eq(mod(floor(t/{SWAP}),2),1)"
-    cy = f"{BOX_Y0}+({BOX_H}-h)/2"
-    run(['-loop', '1', '-i', O + '/bg.png', '-i', O + '/draw_adult.mp4', '-i', O + '/color_adult.mp4', '-i', O + '/draw_kid.mp4', '-i', O + '/color_kid.mp4',
-         '-i', pe, '-loop', '1', '-i', O + '/title.png', '-i', O + '/tl_audio.wav', '-filter_complex',
-         f"[1:v][2:v]concat=n=2:v=1[pa];[3:v][4:v]concat=n=2:v=1[pk];"
+    t_end = (min(dur(O + '/draw_adult.mp4'), dur(O + '/draw_kid.mp4')) + min(dur(O + '/color_adult.mp4'), dur(O + '/color_kid.mp4'))) / SPEED
+    vo = None
+    if kind == 'facts':
+        vo = O + '/vo.wav'
+        if not os.path.exists(vo): tts(open(O + '/facts.txt').read().strip(), vo)
+        t_end = max(t_end, dur(vo) + 1.0)  # never cut the voiceover off; the timelapse just runs slower
+    total = t_end + END
+    # audio: music bed (quiet under a voiceover), fade out; voiceover starts at 0.6 s
+    af = f"atrim=0:{total},afade=t=in:d=0.5,afade=t=out:st={total - 2}:d=2,loudnorm=I={-30 if vo else -19}:TP=-3"
+    run(['-i', MUSIC, '-af', af, '-ar', '48000', '-ac', '2', '-y', O + '/bed.wav'])
+    if vo:
+        run(['-i', O + '/bed.wav', '-i', vo, '-filter_complex', '[1:a]loudnorm=I=-15:TP=-2,adelay=600|600[v];[0:a][v]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.75',
+             '-ar', '48000', '-y', O + '/tl_audio.wav'])
+    else: os.replace(O + '/bed.wav', O + '/tl_audio.wav')
+    kid_on = f"lt(t,{t_end})*eq(mod(floor(t/{SWAP:.3f}),2),1)"
+    cy = f"{BOX_Y0}+({BOX_H}-h)/2"; sp = f"setpts=PTS/{SPEED}," if SPEED != 1 else ''
+    # stretch to t_end if the voiceover is longer than the sped-up drawing
+    nat = (min(dur(O + '/draw_adult.mp4'), dur(O + '/draw_kid.mp4')) + min(dur(O + '/color_adult.mp4'), dur(O + '/color_kid.mp4')))
+    sp = f"setpts=PTS*{t_end / nat:.4f},fps=24,"
+    out = f'{O}/{slug}-{kind}-{STYLE}.mp4'
+    run(['-loop', '1', '-i', O + f'/bg_{STYLE}.png', '-i', O + '/draw_adult.mp4', '-i', O + '/color_adult.mp4', '-i', O + '/draw_kid.mp4', '-i', O + '/color_kid.mp4',
+         '-loop', '1', '-i', O + f'/end_{STYLE}.png', '-loop', '1', '-i', O + '/title.png', '-i', O + '/tl_audio.wav', '-filter_complex',
+         f"[1:v][2:v]concat=n=2:v=1,{sp}null[pa];[3:v][4:v]concat=n=2:v=1,{sp}null[pk];"
          f"[0:v][pa]overlay=(W-w)/2:{cy}:eof_action=pass[a];[a][pk]overlay=(W-w)/2:{cy}:eof_action=pass:enable='{kid_on}'[b];"
-         f"[b][5:v]overlay=(W-w)/2:{end_top}:enable='gte(t,{t_end})'[c];"
-         f"[6:v]format=rgba,fade=t=out:st={TITLE}:d=0.6:alpha=1[ti];[c][ti]overlay=(W-w)/2:{BOX_Y1}-{th}+40:shortest=0:enable='lt(t,{TITLE + 0.7})',"
-         f"subtitles={ass}:fontsdir={FONTS},format=yuv420p[v]", '-map', '[v]', '-map', '7:a',
-         '-t', str(total), '-r', '24', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '19', '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart', '-y', f'{O}/{slug}-timelapse.mp4'])
-    print('timelapse', round(total, 2), 's ->', f'{O}/{slug}-timelapse.mp4')
+         f"[5:v]format=rgba,fade=t=in:st={t_end}:d=0.35:alpha=1[e];[b][e]overlay=0:0:enable='gte(t,{t_end})'[c];"
+         f"[6:v]format=rgba,fade=t=out:st={TITLE}:d=0.6:alpha=1[ti];[c][ti]overlay=(W-w)/2:{BOX_Y1}-{th}+40:enable='lt(t,{TITLE + 0.7})',format=yuv420p[v]",
+         '-map', '[v]', '-map', '7:a', '-t', str(total), '-r', '24', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '19', '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart', '-y', out])
+    print(kind, round(total, 2), 's ->', out)
 
 elif kind == 'moment':
     a, b = float(sys.argv[3]), float(sys.argv[4]); caps = json.load(open(sys.argv[5])); name = sys.argv[6] if len(sys.argv) > 6 else 'moment'
