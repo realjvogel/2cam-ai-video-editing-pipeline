@@ -32,7 +32,7 @@ def background(path, style='blue'):
     v = Image.new('L', (VW, VH), 0); ImageDraw.Draw(v).ellipse((-500, -300, VW + 500, VH + 300), fill=255); v = v.filter(ImageFilter.GaussianBlur(200))
     bg = Image.composite(bg, Image.new('RGB', (VW, VH), tuple(int(c * .75) for c in c1)), v).convert('RGBA')
     wm = Image.open(A + '/super-art-bros-wordmark-light.png').convert('RGBA'); wm = wm.resize((230, int(wm.height * 230 / wm.width)), Image.LANCZOS)
-    bg.alpha_composite(wm, (VW // 2 - 115, 26)); bg.save(path); return bg, 26 + wm.height
+    clean = bg.copy(); bg.alpha_composite(wm, (VW // 2 - 115, 26)); bg.save(path); bg.clean = clean; return bg, 26 + wm.height
 
 def title_card(path, width=900):
     """'How to draw a' + subject, transparent, shown over the bottom of the paper for the first seconds"""
@@ -44,20 +44,28 @@ def title_card(path, width=900):
 def trim(im):
     a = np.asarray(im)[..., 3]; ys, xs = np.where(a > 8); return im.crop((xs.min(), ys.min(), xs.max() + 1, ys.max() + 1))
 
-def art_card(bg, path, lettering):
-    """lettering over both finished drawings as tilted photo cards: the opener (title) and the ending ('DRAW WITH US TODAY!')"""
-    c = bg.copy()
-    t = trim(lettering); t = t.resize((900, int(t.height * 900 / t.width)), Image.LANCZOS)
-    c.alpha_composite(t, ((VW - t.width) // 2, 170))
+def art_card(bg, path, lettering, end=False):
+    """Both finished drawings as tilted photo cards.
+    opener: small wordmark, title lettering on top. end: big Super Art Bros wordmark on top, small 'Draw with us today!' at the bottom."""
+    c = (bg.clean if end else bg).copy()
     def card(f, h, rot):
         im = Image.open(f).convert('RGB'); im = im.resize((int(im.width * h / im.height), h), Image.LANCZOS)
         b = Image.new('RGBA', (im.width + 24, im.height + 24), (255, 255, 255, 255)); b.paste(im, (12, 12)); return b.rotate(rot, expand=True, resample=Image.BICUBIC)
     def shadow(im, xy):
         s = Image.new('RGBA', c.size, (0, 0, 0, 0)); s.paste((0, 0, 0, 255), (xy[0], xy[1] + 10), Image.new('L', im.size, 110))
         c.alpha_composite(s.filter(ImageFilter.GaussianBlur(18))); c.alpha_composite(im, xy)
-    a, b = card(E + '/drawing_0.png', 610, 3), card(E + '/drawing_1.png', 610, -3); x = (VW - a.width - b.width + 30) // 2; y = 170 + t.height + 70
-    shadow(a, (x, y)); shadow(b, (x + a.width - 30, y + 30)); c.save(path)
-
+    t = trim(lettering)
+    if end:
+        wm = trim(Image.open(A + '/super-art-bros-wordmark-light.png').convert('RGBA')); wm = wm.resize((720, int(wm.height * 720 / wm.width)), Image.LANCZOS)
+        c.alpha_composite(wm, ((VW - wm.width) // 2, 90)); y = 90 + wm.height + 50
+        a, b = card(E + '/drawing_0.png', 560, 3), card(E + '/drawing_1.png', 560, -3); x = (VW - a.width - b.width + 30) // 2
+        shadow(a, (x, y)); shadow(b, (x + a.width - 30, y + 30))
+        t = t.resize((560, int(t.height * 560 / t.width)), Image.LANCZOS); c.alpha_composite(t, ((VW - t.width) // 2, min(y + b.height + 70, 1690 - t.height)))
+    else:
+        t = t.resize((900, int(t.height * 900 / t.width)), Image.LANCZOS); c.alpha_composite(t, ((VW - t.width) // 2, 170))
+        a, b = card(E + '/drawing_0.png', 610, 3), card(E + '/drawing_1.png', 610, -3); x = (VW - a.width - b.width + 30) // 2; y = 170 + t.height + 70
+        shadow(a, (x, y)); shadow(b, (x + a.width - 30, y + 30))
+    c.save(path)
 def secret(name):
     import re
     if os.environ.get(name): return os.environ[name]
@@ -109,7 +117,7 @@ if kind in ('timelapse', 'facts'):
     bg, wm_bottom = background(O + f'/bg_{STYLE}.png', STYLE); BOX_Y0 = wm_bottom + 14; BOX_H = BOX_Y1 - BOX_Y0
     title_card(O + '/title.png'); OPEN = 2.0
     art_card(bg, O + f'/open_{STYLE}.png', Image.open(O + '/title.png'))   # every Short opens on the finished artwork
-    art_card(bg, O + f'/end_{STYLE}.png', Image.open(R + '/cache/lettering/short-draw-with-us-today_1.png').convert('RGBA'))
+    art_card(bg, O + f'/end_{STYLE}.png', Image.open(R + '/cache/lettering/short-draw-with-us-today_1.png').convert('RGBA'), end=True)
     def crop(b, aspect=BOX_W / BOX_H, pad=0.03):
         """tall crop around the paper (cover, not fit): full paper height + a little table, width from the box aspect"""
         ph = min(1.0, (b[3] - b[1]) + 2 * pad) * 2160; pw = ph * aspect
