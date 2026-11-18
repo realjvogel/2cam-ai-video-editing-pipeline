@@ -1,7 +1,7 @@
 """YouTube Shorts (1080x1920, made for kids) from an episode's raw footage.
 usage:
-  sab_shorts.py <slug> timelapse                       both papers sped up, cutting adult <-> kid every 3 s (SAB_SHORT_SWAP), small wordmark, title fades,
-                                                       ends on "Draw with us today!" + both drawings. SAB_SHORT_BG=blue|yellow, SAB_SHORT_MUSIC=<file>
+  sab_shorts.py <slug> timelapse                       both papers sped up, cutting adult <-> kid every 3 s (SAB_SHORT_SWAP), small wordmark,
+                                                       opens on the finished drawings + title (2 s), ends on "Draw with us today!" + both drawings. SAB_SHORT_BG=blue|yellow, SAB_SHORT_MUSIC=<file>
   sab_shorts.py <slug> facts                           same, faster (SAB_SHORT_SPEED, default 1.4), with a fun-fact voiceover from W/shorts/facts.txt (TTS)
                                                        or Josh's own recording at W/shorts/vo.wav
   sab_shorts.py <slug> moment <raw_a> <raw_b> <captions.json> [name]
@@ -44,10 +44,10 @@ def title_card(path, width=900):
 def trim(im):
     a = np.asarray(im)[..., 3]; ys, xs = np.where(a > 8); return im.crop((xs.min(), ys.min(), xs.max() + 1, ys.max() + 1))
 
-def end_card(bg, path):
-    """'DRAW WITH US TODAY!' lettering over both finished drawings as tilted photo cards"""
+def art_card(bg, path, lettering):
+    """lettering over both finished drawings as tilted photo cards: the opener (title) and the ending ('DRAW WITH US TODAY!')"""
     c = bg.copy()
-    t = trim(Image.open(R + '/cache/lettering/short-draw-with-us-today_1.png').convert('RGBA')); t = t.resize((900, int(t.height * 900 / t.width)), Image.LANCZOS)
+    t = trim(lettering); t = t.resize((900, int(t.height * 900 / t.width)), Image.LANCZOS)
     c.alpha_composite(t, ((VW - t.width) // 2, 170))
     def card(f, h, rot):
         im = Image.open(f).convert('RGB'); im = im.resize((int(im.width * h / im.height), h), Image.LANCZOS)
@@ -55,7 +55,7 @@ def end_card(bg, path):
     def shadow(im, xy):
         s = Image.new('RGBA', c.size, (0, 0, 0, 0)); s.paste((0, 0, 0, 255), (xy[0], xy[1] + 10), Image.new('L', im.size, 110))
         c.alpha_composite(s.filter(ImageFilter.GaussianBlur(18))); c.alpha_composite(im, xy)
-    a, b = card(E + '/drawing_0.png', 660, 3), card(E + '/drawing_1.png', 660, -3); x = (VW - a.width - b.width + 30) // 2; y = 170 + t.height + 70
+    a, b = card(E + '/drawing_0.png', 610, 3), card(E + '/drawing_1.png', 610, -3); x = (VW - a.width - b.width + 30) // 2; y = 170 + t.height + 70
     shadow(a, (x, y)); shadow(b, (x + a.width - 30, y + 30)); c.save(path)
 
 def tts(text, out, voice='ash'):
@@ -74,7 +74,7 @@ def audio_norm(src_args, dur, out, music=None, fade_out=1.5):
 
 if kind in ('timelapse', 'facts'):
     # Both papers sped up, cutting back and forth every SWAP seconds on the same clock (adult step, then the kid copying it).
-    # Paper fills the frame on a bright sunburst; small wordmark on top; the title sits low and fades out; ends on "Draw with us today!" + both drawings.
+    # Paper fills the frame on a bright sunburst; small wordmark on top; the title sits low and fades out; opens on the finished drawings + title (2 s), ends on "Draw with us today!" + both drawings.
     # facts: same, faster (SPEED), with a fun-fact voiceover (W/shorts/facts.txt -> TTS, or Josh's own recording at W/shorts/vo.wav) over a quiet music bed.
     STYLE = os.environ.get('SAB_SHORT_BG', 'blue'); MUSIC = os.environ.get('SAB_SHORT_MUSIC', SSD + '/Projects/SAMME_Sweet_instrumental_2_02.mp3')
     SPEED = float(os.environ.get('SAB_SHORT_SPEED', 1.4 if kind == 'facts' else 1.0))
@@ -84,7 +84,9 @@ if kind in ('timelapse', 'facts'):
     P = np.array(json.load(open(W + '/papers.json'))); m = (P[:, 0] >= d0) & (P[:, 0] <= c1)
     boxes = {'adult': np.median(P[m, 1:5], 0), 'kid': np.median(P[m, 5:9], 0)}
     bg, wm_bottom = background(O + f'/bg_{STYLE}.png', STYLE); BOX_Y0 = wm_bottom + 14; BOX_H = BOX_Y1 - BOX_Y0
-    th = title_card(O + '/title.png'); end_card(bg, O + f'/end_{STYLE}.png')
+    title_card(O + '/title.png'); OPEN = 2.0
+    art_card(bg, O + f'/open_{STYLE}.png', Image.open(O + '/title.png'))   # every Short opens on the finished artwork
+    art_card(bg, O + f'/end_{STYLE}.png', Image.open(R + '/cache/lettering/short-draw-with-us-today_1.png').convert('RGBA'))
     def crop(b, aspect=BOX_W / BOX_H, pad=0.03):
         """tall crop around the paper (cover, not fit): full paper height + a little table, width from the box aspect"""
         ph = min(1.0, (b[3] - b[1]) + 2 * pad) * 2160; pw = ph * aspect
@@ -107,13 +109,13 @@ if kind in ('timelapse', 'facts'):
     if kind == 'facts':
         vo = O + '/vo.wav'
         if not os.path.exists(vo): tts(open(O + '/facts.txt').read().strip(), vo)
-        t_end = max(t_end, dur(vo) + 1.0)  # never cut the voiceover off; the timelapse just runs slower
-    total = t_end + END
-    # audio: music bed (quiet under a voiceover), fade out; voiceover starts at 0.6 s
+        t_end = max(t_end, dur(vo) + 1.0 - OPEN)  # never cut the voiceover off; the timelapse just runs slower
+    total = OPEN + t_end + END
+    # audio: music bed (quiet under a voiceover), fade out; voiceover starts at 0.4 s, over the opener
     af = f"atrim=0:{total},afade=t=in:d=0.5,afade=t=out:st={total - 2}:d=2,loudnorm=I={-30 if vo else -19}:TP=-3"
     run(['-i', MUSIC, '-af', af, '-ar', '48000', '-ac', '2', '-y', O + '/bed.wav'])
     if vo:
-        run(['-i', O + '/bed.wav', '-i', vo, '-filter_complex', '[1:a]loudnorm=I=-15:TP=-2,adelay=600|600[v];[0:a][v]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.75',
+        run(['-i', O + '/bed.wav', '-i', vo, '-filter_complex', '[1:a]loudnorm=I=-15:TP=-2,adelay=400|400[v];[0:a][v]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.75',
              '-ar', '48000', '-y', O + '/tl_audio.wav'])
     else: os.replace(O + '/bed.wav', O + '/tl_audio.wav')
     kid_on = f"lt(t,{t_end})*eq(mod(floor(t/{SWAP:.3f}),2),1)"
@@ -121,14 +123,17 @@ if kind in ('timelapse', 'facts'):
     # stretch to t_end if the voiceover is longer than the sped-up drawing
     nat = (min(dur(O + '/draw_adult.mp4'), dur(O + '/draw_kid.mp4')) + min(dur(O + '/color_adult.mp4'), dur(O + '/color_kid.mp4')))
     sp = f"setpts=PTS*{t_end / nat:.4f},fps=24,"
-    out = f'{O}/{slug}-{kind}-{STYLE}.mp4'
+    out = f'{O}/{slug}-{kind}-{STYLE}.mp4'; enc = ['-r', '24', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '19', '-pix_fmt', 'yuv420p']
+    run(['-loop', '1', '-t', str(OPEN), '-i', O + f'/open_{STYLE}.png', '-vf', f'fade=t=out:st={OPEN - 0.2}:d=0.2:color=white'] + enc + ['-y', O + '/v_open.mp4'])
     run(['-loop', '1', '-i', O + f'/bg_{STYLE}.png', '-i', O + '/draw_adult.mp4', '-i', O + '/color_adult.mp4', '-i', O + '/draw_kid.mp4', '-i', O + '/color_kid.mp4',
-         '-loop', '1', '-i', O + f'/end_{STYLE}.png', '-loop', '1', '-i', O + '/title.png', '-i', O + '/tl_audio.wav', '-filter_complex',
+         '-loop', '1', '-i', O + f'/end_{STYLE}.png', '-filter_complex',
          f"[1:v][2:v]concat=n=2:v=1,{sp}null[pa];[3:v][4:v]concat=n=2:v=1,{sp}null[pk];"
          f"[0:v][pa]overlay=(W-w)/2:{cy}:eof_action=pass[a];[a][pk]overlay=(W-w)/2:{cy}:eof_action=pass:enable='{kid_on}'[b];"
-         f"[5:v]format=rgba,fade=t=in:st={t_end}:d=0.35:alpha=1[e];[b][e]overlay=0:0:enable='gte(t,{t_end})'[c];"
-         f"[6:v]format=rgba,fade=t=out:st={TITLE}:d=0.6:alpha=1[ti];[c][ti]overlay=(W-w)/2:{BOX_Y1}-{th}+40:enable='lt(t,{TITLE + 0.7})',format=yuv420p[v]",
-         '-map', '[v]', '-map', '7:a', '-t', str(total), '-r', '24', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '19', '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart', '-y', out])
+         f"[5:v]format=rgba,fade=t=in:st={t_end}:d=0.35:alpha=1[e];[b][e]overlay=0:0:enable='gte(t,{t_end})',format=yuv420p[v]",
+         '-map', '[v]', '-t', str(t_end + END)] + enc + ['-y', O + '/v_main.mp4'])
+    open(O + '/v_list.txt', 'w').write(f"file '{O}/v_open.mp4'\nfile '{O}/v_main.mp4'\n")
+    run(['-f', 'concat', '-safe', '0', '-i', O + '/v_list.txt', '-i', O + '/tl_audio.wav', '-map', '0:v', '-map', '1:a', '-c:v', 'copy',
+         '-c:a', 'aac', '-b:a', '160k', '-t', str(total), '-movflags', '+faststart', '-y', out])
     print(kind, round(total, 2), 's ->', out)
 
 elif kind == 'moment':
