@@ -14,6 +14,8 @@ SSD = os.path.expanduser(os.environ.get('SAB_SSD', '~/sab-data')); R = SSD + '/S
 W = os.path.join(os.path.expanduser(os.environ.get('SAB_WORK', '~/sab/eps')), slug); O = W + '/shorts'; os.makedirs(O, exist_ok=True)
 prep = json.load(open(W + '/prep.json')); edl = json.load(open(W + '/edl.json')); cfg = json.load(open(W + '/episode.json'))
 FONTS = R + '/promo/fonts'; A = R + '/assets/look-c'
+EA = f"{R}/episodes/{os.environ.get('SAB_SHORT_ART_SLUG', slug)}"   # finished drawings (split episodes: the part with the coloring)
+CSLUG = os.environ.get('SAB_SHORT_COLOR_SLUG', slug)                    # coloring from another recording of the same episode
 def run(a): subprocess.run(['ffmpeg', '-nostdin', '-v', 'error'] + a, check=True)
 def raw(p):
     if os.path.exists(p): return p
@@ -58,12 +60,12 @@ def art_card(bg, path, lettering, end=False):
     if end:
         wm = trim(Image.open(A + '/super-art-bros-wordmark-light.png').convert('RGBA')); wm = wm.resize((720, int(wm.height * 720 / wm.width)), Image.LANCZOS)
         c.alpha_composite(wm, ((VW - wm.width) // 2, 90)); y = 90 + wm.height + 50
-        a, b = card(E + '/drawing_0.png', 560, 3), card(E + '/drawing_1.png', 560, -3); x = (VW - a.width - b.width + 30) // 2
+        a, b = card(EA + '/drawing_0.png', 560, 3), card(EA + '/drawing_1.png', 560, -3); x = (VW - a.width - b.width + 30) // 2
         shadow(a, (x, y)); shadow(b, (x + a.width - 30, y + 30))
         t = t.resize((560, int(t.height * 560 / t.width)), Image.LANCZOS); c.alpha_composite(t, ((VW - t.width) // 2, min(y + b.height + 70, 1690 - t.height)))
     else:
         t = t.resize((900, int(t.height * 900 / t.width)), Image.LANCZOS); c.alpha_composite(t, ((VW - t.width) // 2, 170))
-        a, b = card(E + '/drawing_0.png', 610, 3), card(E + '/drawing_1.png', 610, -3); x = (VW - a.width - b.width + 30) // 2; y = 170 + t.height + 70
+        a, b = card(EA + '/drawing_0.png', 610, 3), card(EA + '/drawing_1.png', 610, -3); x = (VW - a.width - b.width + 30) // 2; y = 170 + t.height + 70
         shadow(a, (x, y)); shadow(b, (x + a.width - 30, y + 30))
     c.save(path)
 def secret(name):
@@ -111,9 +113,13 @@ if kind in ('timelapse', 'facts'):
     SPEED = float(os.environ.get('SAB_SHORT_SPEED', 1.4 if kind == 'facts' else 1.0))
     SWAP, TITLE, END = float(os.environ.get('SAB_SHORT_SWAP', 3.0)) / (SPEED ** .5), 3.0, 3.5
     BOX_W, BOX_Y1 = 1060, 1700           # paper box; below ~1700 the Shorts UI covers the frame
-    top = raw(prep['top']); d0, d1 = cfg['beats']['draw']; c0, c1 = cfg['beats']['montage']
-    P = np.array(json.load(open(W + '/papers.json'))); m = (P[:, 0] >= d0) & (P[:, 0] <= c1)
-    boxes = {'adult': np.median(P[m, 1:5], 0), 'kid': np.median(P[m, 5:9], 0)}
+    def source(sl, beat):
+        """overhead file, paper boxes and time range of one beat in one recording"""
+        Wd = os.path.join(os.path.dirname(W), sl); pr = json.load(open(Wd + '/prep.json')); cf = json.load(open(Wd + '/episode.json'))
+        a0, a1 = cf['beats'][beat]; P = np.array(json.load(open(Wd + '/papers.json'))); m = (P[:, 0] >= a0) & (P[:, 0] <= a1)
+        return raw(pr['top']), {'adult': np.median(P[m, 1:5], 0), 'kid': np.median(P[m, 5:9], 0)}, a0, a1
+    SRC = {'draw': source(slug, 'draw'), 'color': source(CSLUG, 'montage')}
+    top, boxes, c0, c1 = SRC['color']
     bg, wm_bottom = background(O + f'/bg_{STYLE}.png', STYLE); BOX_Y0 = wm_bottom + 14; BOX_H = BOX_Y1 - BOX_Y0
     title_card(O + '/title.png'); OPEN = 2.0
     art_card(bg, O + f'/open_{STYLE}.png', Image.open(O + '/title.png'))   # every Short opens on the finished artwork
@@ -126,12 +132,12 @@ if kind in ('timelapse', 'facts'):
         return f"crop={int(pw) // 2 * 2}:{int(ph) // 2 * 2}:{int(x0)}:{int(y0)}"
     fit = f"scale={BOX_W}:{BOX_H}:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2"
     # keyframes are 1 s apart: decoding keyframes only gives ~1 frame per source second, i.e. a ~24x timelapse at 24 fps (SPEED drops more).
-    for who, b in boxes.items():
-        for name, a0, a1, every in (('draw', d0, d1, 1), ('color', c0, c1, 3)):
-            p = f'{O}/{name}_{who}.mp4'
+    for who in ('adult', 'kid'):
+        for name, every in (('draw', 1), ('color', 3)):
+            src, bx, a0, a1 = SRC[name]; p = f'{O}/{name}_{who}.mp4'
             if os.path.exists(p): continue
-            run(['-skip_frame', 'nokey', '-ss', str(a0), '-t', str(a1 - a0), '-i', top, '-an', '-vf',
-                 f"select='not(mod(n\\,{every}))',setpts=N/24/TB,{crop(b)},{fit}",
+            run(['-skip_frame', 'nokey', '-ss', str(a0), '-t', str(a1 - a0), '-i', src, '-an', '-vf',
+                 f"select='not(mod(n\\,{every}))',setpts=N/24/TB,{crop(bx[who])},{fit}",
                  '-r', '24', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p', '-y', p + '.tmp.mp4'])
             os.rename(p + '.tmp.mp4', p)
     dur = lambda f: float(subprocess.check_output(['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', f]))
@@ -154,11 +160,14 @@ if kind in ('timelapse', 'facts'):
     # stretch to t_end if the voiceover is longer than the sped-up drawing
     nat = (min(dur(O + '/draw_adult.mp4'), dur(O + '/draw_kid.mp4')) + min(dur(O + '/color_adult.mp4'), dur(O + '/color_kid.mp4')))
     sp = f"setpts=PTS*{t_end / nat:.4f},fps=24,"
+    def wh(n):  # split episodes: the coloring recording's crop can differ slightly in size, so match it to the drawing clip
+        return subprocess.check_output(['ffprobe', '-v', 'error', '-select_streams', 'v', '-show_entries', 'stream=width,height', '-of', 'csv=p=0:s=x', f'{O}/{n}.mp4']).decode().strip().replace('x', ':')
     out = f'{O}/{slug}-{kind}-{STYLE}.mp4'; enc = ['-r', '24', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '19', '-pix_fmt', 'yuv420p']
     run(['-loop', '1', '-t', str(OPEN), '-i', O + f'/open_{STYLE}.png', '-vf', f'fade=t=out:st={OPEN - 0.2}:d=0.2:color=white'] + enc + ['-y', O + '/v_open.mp4'])
     run(['-loop', '1', '-i', O + f'/bg_{STYLE}.png', '-i', O + '/draw_adult.mp4', '-i', O + '/color_adult.mp4', '-i', O + '/draw_kid.mp4', '-i', O + '/color_kid.mp4',
          '-loop', '1', '-i', O + f'/end_{STYLE}.png', '-filter_complex',
-         f"[1:v][2:v]concat=n=2:v=1,{sp}null[pa];[3:v][4:v]concat=n=2:v=1,{sp}null[pk];"
+         f"[2:v]scale={wh('draw_adult')},setsar=1[ca];[4:v]scale={wh('draw_kid')},setsar=1[ck];[1:v]setsar=1[da];[3:v]setsar=1[dk];"
+         f"[da][ca]concat=n=2:v=1,{sp}null[pa];[dk][ck]concat=n=2:v=1,{sp}null[pk];"
          f"[0:v][pa]overlay=(W-w)/2:{cy}:eof_action=pass[a];[a][pk]overlay=(W-w)/2:{cy}:eof_action=pass:enable='{kid_on}'[b];"
          f"[5:v]format=rgba,fade=t=in:st={t_end}:d=0.35:alpha=1[e];[b][e]overlay=0:0:enable='gte(t,{t_end})',format=yuv420p[v]",
          '-map', '[v]', '-t', str(t_end + END)] + enc + ['-y', O + '/v_main.mp4'])
