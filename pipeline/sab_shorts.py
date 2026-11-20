@@ -21,6 +21,7 @@ def raw(p):
     if os.path.exists(p): return p
     return SSD + p.split('data drive', 1)[1]
 VW, VH = 1080, 1920
+SW, SH = prep.get('src_w', 3840), prep.get('src_h', 2160)   # source frame size (Jan 2024 episodes are 1080p)
 
 def background(path, style='blue'):
     """bright sunburst (blue or yellow, rotate between episodes) filling 9:16, small wordmark on top"""
@@ -126,9 +127,9 @@ if kind in ('timelapse', 'facts'):
     art_card(bg, O + f'/end_{STYLE}.png', Image.open(R + '/cache/lettering/short-draw-with-us-today_1.png').convert('RGBA'), end=True)
     def crop(b, aspect=BOX_W / BOX_H, pad=0.03):
         """tall crop around the paper (cover, not fit): full paper height + a little table, width from the box aspect"""
-        ph = min(1.0, (b[3] - b[1]) + 2 * pad) * 2160; pw = ph * aspect
-        cx, cy = (b[0] + b[2]) / 2 * 3840, (b[1] + b[3]) / 2 * 2160
-        x0 = min(max(cx - pw / 2, 0), 3840 - pw); y0 = min(max(cy - ph / 2, 0), 2160 - ph)
+        ph = min(1.0, (b[3] - b[1]) + 2 * pad) * SH; pw = ph * aspect
+        cx, cy = (b[0] + b[2]) / 2 * SW, (b[1] + b[3]) / 2 * SH
+        x0 = min(max(cx - pw / 2, 0), SW - pw); y0 = min(max(cy - ph / 2, 0), SH - ph)
         return f"crop={int(pw) // 2 * 2}:{int(ph) // 2 * 2}:{int(x0)}:{int(y0)}"
     fit = f"scale={BOX_W}:{BOX_H}:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2"
     # keyframes are 1 s apart: decoding keyframes only gives ~1 frame per source second, i.e. a ~24x timelapse at 24 fps (SPEED drops more).
@@ -179,8 +180,8 @@ if kind in ('timelapse', 'facts'):
 elif kind == 'moment':
     a, b = float(sys.argv[3]), float(sys.argv[4]); caps = json.load(open(sys.argv[5])); name = sys.argv[6] if len(sys.argv) > 6 else 'moment'
     front = raw(prep['front']); off = prep['offset']; hb = cfg['head_boxes']['kid']
-    cx = (hb[0] + hb[2]) / 2 * 3840; cy = ((hb[1] + hb[3]) / 2 + 0.02) * 2160; ch = 1778; cw = 1000
-    x0 = int(min(max(cx - cw / 2, 0), 3840 - cw)) // 2 * 2; y0 = int(min(max(cy - ch / 2, 0), 2160 - ch)) // 2 * 2
+    cx = (hb[0] + hb[2]) / 2 * SW; cy = ((hb[1] + hb[3]) / 2 + 0.02) * SH; ch = int(1778 * SH / 2160) // 2 * 2; cw = int(1000 * SH / 2160) // 2 * 2
+    x0 = int(min(max(cx - cw / 2, 0), SW - cw)) // 2 * 2; y0 = int(min(max(cy - ch / 2, 0), SH - ch)) // 2 * 2
     end = 2.6; dur = b - a
     def t(s):  # ASS time
         s = max(0, s); return f"{int(s // 3600)}:{int(s % 3600 // 60):02d}:{s % 60:05.2f}"
