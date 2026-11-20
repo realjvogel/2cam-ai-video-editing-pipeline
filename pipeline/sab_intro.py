@@ -85,8 +85,8 @@ while True:
     f=np.frombuffer(bb,np.uint8).reshape(SH,SW,3); al=np.frombuffer(aa,np.uint8).reshape(1080,1920)
     t=n/FPS; z,cx,cy=cam(t); cw,ch=SW/z,SH/z; x=min(max(cx*SW-cw/2,0),SW-cw); y=min(max(cy*SH-ch/2,0),SH-ch); s=OW/cw
     src=cv2.GaussianBlur(f,(0,0),0.42/s) if 1/s>1.25 else f
-    out=cv2.warpAffine(src,np.float32([[s,0,-x*s],[0,s,-y*s]]),(OW,OH),flags=cv2.INTER_LINEAR,borderMode=cv2.BORDER_REFLECT).astype(np.float32)
-    A=cv2.warpAffine(al,np.float32([[2*s,0,-x*s],[0,2*s,-y*s]]),(OW,OH),flags=cv2.INTER_LINEAR).astype(np.float32)[...,None]/255
+    out=cv2.warpAffine(src,np.float32([[s,0,-x*s],[0,s,-y*s]]),(OW,OH),flags=cv2.INTER_CUBIC if s>=1 else cv2.INTER_LINEAR,borderMode=cv2.BORDER_REFLECT).astype(np.float32)
+    A=cv2.warpAffine(al,np.float32([[SW/1920*s,0,-x*s],[0,SH/1080*s,-y*s]]),(OW,OH),flags=cv2.INTER_LINEAR).astype(np.float32)[...,None]/255
     bg=cv2.GaussianBlur(out,(0,0),3)*0.86
     if z<1.06 and TH<=t<=TO+0.4:
         fo=1-min(1,max(0,(t-TO)/0.35)); X0=-HDR[1].shape[1]-20*K; hx=int(X0+(TP['x']*K-X0)*back((t-TH)/0.45))

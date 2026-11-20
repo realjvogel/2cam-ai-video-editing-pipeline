@@ -66,6 +66,24 @@ for r in RANGES.get('bye',[]): add('bye','front',*r)
 if 'bye' in B: add('iris','iris',B['bye'][1],B['bye'][1]+1.0)
 oz=float(os.popen(f"ffprobe -v error -show_entries format=duration -of csv=p=0 '{E}/outro_anim_v.mp4'").read() or 13)
 if 'bye' in B: add('outro_video','outro',0,oz-1.0)
+# snap hard cuts (where the dialogue jumps) to the nearest quiet 30 ms so a word is never clipped:
+# a segment end may move up to 0.6 s later (finish the word) or 0.15 s earlier; a start up to 0.6 s earlier or 0.15 s later.
+try:
+    import wave as _wv
+    _w=_wv.open(W+'/dlg48.wav'); _sr=_w.getframerate(); _x=np.frombuffer(_w.readframes(_w.getnframes()),np.int16).reshape(-1,_w.getnchannels()).mean(1)
+    def _e(t): s=_x[int(max(0,t-0.015)*_sr):int((t+0.015)*_sr)]; return float(np.sqrt((s**2).mean())) if len(s) else 0
+    def _quiet(t,lo,hi):
+        cand=np.arange(t+lo,t+hi+1e-6,0.01); en=np.array([_e(u) for u in cand]); best=en.min()
+        ok=cand[en<=best*1.5+30]; return float(ok[np.argmin(np.abs(ok-t))])
+    SPEECH=('draw','to_color','review','bye')
+    for i in range(len(S)-1):
+        A_,B_=S[i],S[i+1]
+        if abs(A_['b']-B_['a'])<0.05: continue   # continuous: no cut
+        if A_['role'] in SPEECH: nb=round(_quiet(A_['b'],-0.15,0.6),3); print('snap end  ',A_['name'],A_['b'],'->',nb); A_['b']=nb
+        if B_['role'] in SPEECH and B_['role']!='draw': na=round(_quiet(B_['a'],-0.6,0.15),3); print('snap start',B_['name'],B_['a'],'->',na); B_['a']=na
+    for j in range(len(S)-1):
+        if S[j]['role']=='bye' and S[j+1]['role']=='iris': S[j+1]['a']=S[j]['b']; S[j+1]['b']=S[j]['b']+1.0
+except FileNotFoundError: pass
 # detail zooms: follow the adult's hand. Stay on the adult's paper while his hand is on it; glide to the
 # kid's paper only when it stays off for the next 6 s; come back (starting 1 s early) when it returns for 2 s.
 def side_schedule(z):
