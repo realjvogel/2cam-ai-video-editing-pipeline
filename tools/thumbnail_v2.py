@@ -11,7 +11,7 @@ plate,d0,d1,subp,out=sys.argv[1:6]; HDRF=sys.argv[6] if len(sys.argv)>6 else 'vi
 p=cv2.imread(plate); H,W=p.shape[:2]; ch=int(W*9/16); p=cv2.resize(p[0:ch],(1280,720),interpolation=cv2.INTER_AREA)   # keep the top: room for the header
 rs=sheets(p)
 # the subject word sits bottom-centre: fit each drawing into the part of its sheet above it, so feet/shoes stay visible
-_s=Image.open(subp).convert('RGBA'); _a=np.asarray(_s)[...,3]; _ys,_xs=np.where(_a>40); _h=(_ys.max()-_ys.min()+1)*640/(_xs.max()-_xs.min()+1)
+_s=Image.open(subp).convert('RGBA'); _a=np.asarray(_s)[...,3]; _ys,_xs=np.where(_a>40); _asp=(_xs.max()-_xs.min()+1)/(_ys.max()-_ys.min()+1); SUBJ_W=int(min(640,230*_asp)); _h=SUBJ_W/_asp   # short words (DOG) are capped at 230 px tall
 SUBJ_TOP=712-_h
 def above(r,limit):
     (cx,cy),(w,h),ang=r; vert_h=h if (ang%90)<45 else w; top=cy-vert_h/2; bot=min(cy+vert_h/2,limit-6)
@@ -30,5 +30,5 @@ def put(path,w,xy,anchor='tl'):
     c.alpha_composite(im,(int(x),int(y))); return im.size
 put(A+'super-art-bros-wordmark-light.png',190,(22,16))
 put(A+HDRF,520 if HDRF.endswith('-a.png') else 440,(650,8),'tc')
-put(subp,640,(640,712),'bc')
+put(subp,SUBJ_W,(640,712),'bc')
 c.convert('RGB').save(out,quality=93); print('ok',[(tuple(map(int,r[0])),tuple(map(int,r[1])),round(r[2],1)) for r in rs])
