@@ -13,7 +13,7 @@ def l2r(t):   # local intro seconds -> raw front-cam (top-clock) seconds, skippi
         t-=y-x
     return KEEP[-1][1]
 RF=lambda n: int(round((l2r(n/24)-a)*24))   # raw frame index (from the intro start) for output frame n
-K=edl.get('out_k',1); SW,SH,OW,OH,FPS=3840,2160,1920*K,1080*K,24; ti=edl['title']
+K=edl.get('out_k',1); SW,SH,OW,OH,FPS=prep.get('src_w',3840),prep.get('src_h',2160),1920*K,1080*K,24; ti=edl['title']
 shots=edl['intro_shots']   # [t0,t1,[z,cx,cy],[z,cx,cy],ease] in local intro seconds
 # face-safe framing is solved once per shot endpoint, then eased between: solving it every frame made the framing
 # snap between grid positions (shake) and could drop the zoom level mid-shot (a second zoom)

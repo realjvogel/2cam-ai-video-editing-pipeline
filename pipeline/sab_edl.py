@@ -51,6 +51,16 @@ c0,c1=B['montage'] if 'montage' in B else (0,0); sp=cfg.get('montage_speed',10);
 while x<c1-1:
     y=min(x+50,c1); y=c1 if c1-y<20 else y
     add('montage','front' if k%3==2 else 'top',x,y,speed=sp); x=y; k+=1
+for x in cfg.get('extra',[]):   # optional extra beats after the montage, in order: {role: to_color|draw|montage, cam, a, b}
+    if x['role']=='draw':
+        CH=10 if cfg.get('out_k',2)==2 else 25; m=max(1,int(np.ceil((x['b']-x['a'])/CH))); st=(x['b']-x['a'])/m
+        for i in range(m): add('draw','top',x['a']+i*st,x['a']+(i+1)*st)
+    elif x['role']=='montage':
+        u=x['a']
+        while u<x['b']-1:
+            y=min(u+50,x['b']); y=x['b'] if x['b']-y<20 else y
+            add('montage','front' if k%3==2 else 'top',u,y,speed=sp); u=y; k+=1
+    else: add(x['role'],x.get('cam','front'),x['a'],x['b'])
 for r in RANGES.get('review',[]): add('review','review',*r)
 for r in RANGES.get('bye',[]): add('bye','front',*r)
 if 'bye' in B: add('iris','iris',B['bye'][1],B['bye'][1]+1.0)
@@ -78,7 +88,7 @@ for z in cfg.get('zooms',[]):
     z=dict(z); sc=side_schedule(z)
     if sc: z['sides']=sc; print('zoom',z['t_in'],z['t_out'],'sides',sc)
     zooms.append(z)
-it=cfg.get('intro',{}); edl=dict(slug=slug,out_k=cfg.get('out_k',2),header=cfg.get('header','video-how-to-draw-a.png'),faces=cfg['faces'],head_boxes=cfg.get('head_boxes'),duck=cfg.get('duck',[]),zooms=zooms,frame_margin=cfg.get('frame_margin',0.035),
+it=cfg.get('intro',{}); edl=dict(slug=slug,out_k=cfg.get('out_k',2),header=cfg.get('header','video-how-to-draw-a.png'),faces=cfg['faces'],head_boxes=cfg.get('head_boxes'),duck=cfg.get('duck',[]),zooms=zooms,frame_margin=cfg.get('frame_margin',0.035),base_zoom_max=cfg.get('base_zoom_max',9),zoom_max=cfg.get('zoom_max',2.0),
     title=it.get('title'),intro_shots=it.get('shots'),music=cfg['music'],segments=S)
 json.dump(edl,open(W+'/edl.json','w'),indent=1)
 dur=sum((s['b']-s['a'])/s.get('speed',1) for s in S); print(len(S),'segments, %d:%02d'%(dur//60,dur%60))

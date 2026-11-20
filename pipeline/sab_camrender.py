@@ -1,9 +1,9 @@
 """Render a top-camera segment with the SAB virtual camera (smooth sub-pixel zoom + marker-row stabilization).
 usage: sab_camrender.py <ep_dir> <edl.json> <src> <ss> <dur> <out>"""
-import cv2, numpy as np, subprocess, json, sys
+import cv2, numpy as np, subprocess, json, sys, os
 from sab_cams import Cams
 ep,edlp,src,ss,dur,out=sys.argv[1],sys.argv[2],sys.argv[3],float(sys.argv[4]),float(sys.argv[5]),sys.argv[6]
-C=Cams(ep,json.load(open(edlp))); K=json.load(open(edlp)).get('out_k',1); SW,SH,OW,OH,FPS=3840,2160,1920*K,1080*K,24; stab=[0.05,0.02,0.95,0.17]
+C=Cams(ep,json.load(open(edlp))); K=json.load(open(edlp)).get('out_k',1); _pp=os.path.join(ep,'prep.json'); _pr=json.load(open(_pp)) if os.path.exists(_pp) else {}; SW,SH,OW,OH,FPS=_pr.get('src_w',3840),_pr.get('src_h',2160),1920*K,1080*K,24; stab=[0.05,0.02,0.95,0.17]
 dec=subprocess.Popen(['ffmpeg','-v','error','-ss',str(ss),'-t',str(dur),'-i',src,'-vf','fps=24','-f','rawvideo','-pix_fmt','bgr24','-'],stdout=subprocess.PIPE,bufsize=SW*SH*3)
 enc=subprocess.Popen(['ffmpeg','-v','error','-f','rawvideo','-pix_fmt','bgr24','-s',f'{OW}x{OH}','-r','24','-i','-','-c:v','libx264','-preset','veryfast','-crf','17' if K==1 else '20','-pix_fmt','yuv420p','-y',out],stdin=subprocess.PIPE)
 ref=None; prev=(0.0,0.0); hist=[]; n=0

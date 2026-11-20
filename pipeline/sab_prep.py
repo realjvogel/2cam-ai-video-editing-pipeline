@@ -14,7 +14,11 @@ def sh(cmd,timeout=None):
     try: return subprocess.run(cmd,capture_output=True,text=True,timeout=timeout)
     except subprocess.TimeoutExpired: return subprocess.CompletedProcess(cmd,1,'','timeout')
 st=json.load(open(E+'/prep.json')) if os.path.exists(E+'/prep.json') else {}
-def save(): json.dump(st,open(E+'/prep.json','w'),indent=1)
+def save():   # exFAT SSD: a write right after another can fail; retry
+    for i in range(8):
+        try: json.dump(st,open(E+'/prep.json','w'),indent=1); return
+        except OSError: time.sleep(1.5)
+    json.dump(st,open(E+'/prep.json','w'),indent=1)
 st.update(slug=slug,front=front,top=top,flip_front=FLIP)
 def dur(f): return float(sh(['ffprobe','-v','error','-show_entries','format=duration','-of','csv=p=0',f]).stdout)
 st.setdefault('dur_front',dur(front)); st.setdefault('dur_top',dur(top)); save()
@@ -42,11 +46,12 @@ for name,src,vf in (('top',top,''),('front',front,',hflip,vflip' if FLIP else ''
     print(name,'frames',len(glob.glob(d+'/*.jpg')),'/',total)
 # 4) paper boxes + pen activity per second (needs all top frames)
 fs=sorted(glob.glob(W+'/top/*.jpg'))
+PS,PV=st.get('paper_s',45),st.get('paper_v',160)   # paper = low saturation, bright; Jan 2024's white-washed table needs paper_s 25 / paper_v 205
 if 'papers' not in st and len(fs)>=int(st['dur_top'])-1:
     out=[]; act=[]; prev=None
     for i,f in enumerate(fs):
         im=cv2.imread(f); h,w=im.shape[:2]; hsv=cv2.cvtColor(im,cv2.COLOR_BGR2HSV)
-        m=((hsv[...,1]<45)&(hsv[...,2]>160)).astype(np.uint8)*255; m=cv2.morphologyEx(m,cv2.MORPH_CLOSE,np.ones((5,5),np.uint8))
+        m=((hsv[...,1]<PS)&(hsv[...,2]>PV)).astype(np.uint8)*255; m=cv2.morphologyEx(m,cv2.MORPH_CLOSE,np.ones((5,5),np.uint8))
         cs,_=cv2.findContours(m,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE); cs=sorted([c for c in cs if 0.04*w*h<cv2.contourArea(c)<0.3*w*h],key=cv2.contourArea,reverse=True)[:2]
         g=cv2.cvtColor(im,cv2.COLOR_BGR2GRAY).astype(np.float32)
         if len(cs)==2:

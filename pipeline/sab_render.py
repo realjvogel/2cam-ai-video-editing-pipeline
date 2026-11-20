@@ -7,13 +7,13 @@ slug,mode=sys.argv[1],sys.argv[2]; BUD=float(sys.argv[3]) if len(sys.argv)>3 els
 SSD=os.path.expanduser(os.environ.get('SAB_SSD','~/sab-data')); ROOT=SSD+'/SAB-production'; A=ROOT+'/assets/look-c'
 W=os.path.join(os.path.expanduser(os.environ.get('SAB_WORK','~/sab/eps')),slug); E=f'{ROOT}/episodes/{slug}'; os.makedirs(W+'/vo',exist_ok=True)
 edl=json.load(open(W+'/edl.json')); prep=json.load(open(W+'/prep.json')); OFF=prep['offset']; FLIP='hflip,vflip,' if prep['flip_front'] else ''
-K=edl.get('out_k',1); OWs,OHs=1920*K,1080*K; front,top=prep['front'],prep['top']; C=Cams(W,edl); faces=edl['faces']
+K=edl.get('out_k',1); OWs,OHs=1920*K,1080*K; SW,SH=prep.get('src_w',3840),prep.get('src_h',2160); front,top=prep['front'],prep['top']; C=Cams(W,edl); faces=edl['faces']
 ENC=['-an','-c:v','libx264','-preset','veryfast','-crf','18' if edl.get('out_k',1)==1 else '20','-pix_fmt','yuv420p','-r','24']
 def sh(cmd):
     try: return subprocess.run(cmd,capture_output=True,text=True,timeout=max(5,BUD-(time.time()-T0)+12))
     except subprocess.TimeoutExpired: return subprocess.CompletedProcess(cmd,1,'','timeout')
 def crop(z,cx,cy):
-    cw,ch=3840/z,2160/z; x=min(max(cx*3840-cw/2,0),3840-cw); y=min(max(cy*2160-ch/2,0),2160-ch)
+    cw,ch=SW/z,SH/z; x=min(max(cx*SW-cw/2,0),SW-cw); y=min(max(cy*SH-ch/2,0),SH-ch)
     return f"crop={int(cw)//2*2}:{int(ch)//2*2}:{int(x)}:{int(y)},scale={OWs}:{OHs}"
 def review_crop(t):
     l,r=C._at(C.L,t),C._at(C.R,t); x0,y0,x1,y1=min(l[0],r[0]),min(l[1],r[1]),max(l[2],r[2]),max(l[3],r[3]); m=0.03
@@ -27,9 +27,9 @@ def card_pos(t):   # where the 520x325 face card covers the least paper (bottom-
     def cover(x,y): return sum(max(0,min(x+520,q[2])-max(x,q[0]))*max(0,min(y+325,q[3])-max(y,q[1])) for q in P)
     c=[(1380,712),(20,712),(1380,40)]; best=min(c,key=lambda p:cover(*p)+(1 if p!=(1380,712) else 0)); return best
 def pip_crop():   # landscape crop around both faces in the 4K front frame (after flip)
-    k,a=faces['kid'],faces['adult']; x0=min(k[0],a[0])-0.21; x1=max(k[0],a[0])+0.19; w=min(1.0,x1-x0); h=min(1.0,w*3840*325/520/2160)   # pixel aspect must match the 520x325 card
+    k,a=faces['kid'],faces['adult']; x0=min(k[0],a[0])-0.21; x1=max(k[0],a[0])+0.19; w=min(1.0,x1-x0); h=min(1.0,w*SW*325/520/SH)   # pixel aspect must match the 520x325 card
     cy=(k[1]+a[1])/2+0.05; y0=max(0,min(cy-h/2,1-h)); x0=max(0,min(x0,1-w))
-    return f"crop={int(w*3840)//2*2}:{int(h*2160)//2*2}:{int(x0*3840)}:{int(y0*2160)},scale={520*K}:{325*K}"
+    return f"crop={int(w*SW)//2*2}:{int(h*SH)//2*2}:{int(x0*SW)}:{int(y0*SH)},scale={520*K}:{325*K}"
 def render(s):
     out=f"{W}/vo/{s['name']}.mp4"
     if os.path.exists(out): return True

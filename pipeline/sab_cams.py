@@ -13,14 +13,16 @@ class Cams:
         for A in (self.L,self.R):
             for j in range(4): A[:,j]=av(rm(A[:,j],41),21)
         self.M=edl.get('frame_margin',0.035); self.win=edl.get('zooms',[])
+        self.bmax=edl.get('base_zoom_max',9); self.zmax=edl.get('zoom_max',2.0)   # 1080p sources: cap zoom so it doesn't go soft
     def _at(self,A,t):
         i=int(min(max(t,0),self.n-2)); f=min(max(t-i,0),1); return A[i]*(1-f)+A[i+1]*f
     def base(self,t):
         l=self._at(self.L,t); r=self._at(self.R,t); x0,y0=min(l[0],r[0]),min(l[1],r[1]); x1,y1=max(l[2],r[2]),max(l[3],r[3])
         s=min(1.0,max(x1-x0+2*self.M,y1-y0+2*self.M)); h=s/2
+        s=max(s,1/self.bmax); h=s/2
         return np.array([1/s,min(max((x0+x1)/2,h),1-h),min(max((y0+y1)/2,h),1-h)])
     def target(self,side,t):
-        b=self._at(self.L if side=='L' else self.R,t); ph=b[3]-b[1]; z=float(np.clip(1/(0.92*ph),1.6,2.0))
+        b=self._at(self.L if side=='L' else self.R,t); ph=b[3]-b[1]; z=float(np.clip(1/(0.92*ph),min(1.6,self.zmax),self.zmax))
         return np.array([z,(b[0]+b[2])/2,b[1]+0.47*ph])
     @staticmethod
     def sm(p): p=min(max(p,0),1); return p*p*(3-2*p)
