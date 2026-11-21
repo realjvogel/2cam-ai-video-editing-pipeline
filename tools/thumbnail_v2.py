@@ -19,7 +19,18 @@ def above(r,limit):
     nh=max(bot-top,vert_h*0.55); ncy=top+nh/2
     return ((cx,ncy),(w,nh) if (ang%90)<45 else (nh,h),ang)
 rs=[above(r,SUBJ_TOP) for r in rs]
-for art,r in zip([prewhite(cv2.imread(d0)),prewhite(cv2.imread(d1))],rs):
+def trim_art(a, margin=0.04):
+    """crop a sheet scan to the drawing itself, so the art, not blank paper, fills the sheet on the plate.
+    The width comes from everything above the bottom 18% of the drawing, so a wide strip of grass or a shadow
+    under the character doesn't shrink it (that strip just runs off the sides)."""
+    m=(a.min(2)<200).astype(np.uint8); m=cv2.morphologyEx(m,cv2.MORPH_OPEN,np.ones((5,5),np.uint8))
+    ys,xs=np.where(m>0)
+    if len(xs)<50: return a
+    y0,y1=np.percentile(ys,0.2),np.percentile(ys,99.8)
+    up=ys<y0+0.82*(y1-y0); x0,x1=np.percentile(xs[up],0.2),np.percentile(xs[up],99.8)
+    mg=int(margin*max(y1-y0,x1-x0)); H_,W_=a.shape[:2]
+    return a[max(0,int(y0)-mg):min(H_,int(y1)+mg),max(0,int(x0)-mg):min(W_,int(x1)+mg)]
+for art,r in zip([trim_art(prewhite(cv2.imread(d0))),trim_art(prewhite(cv2.imread(d1)))],rs):
     p=place(p,art,r,fill=0.97)                                           # drawings fill the uncovered part of each sheet
 c=Image.fromarray(cv2.cvtColor(p,cv2.COLOR_BGR2RGB)).convert('RGBA')
 def put(path,w,xy,anchor='tl'):
