@@ -5,7 +5,7 @@ usage:
   sab_shorts.py <slug> facts                           same, faster (SAB_SHORT_SPEED, default 1.4), with a fun-fact voiceover from W/shorts/facts.txt (TTS)
                                                        or Josh's own recording at W/shorts/vo.wav
   sab_shorts.py <slug> moment <raw_a> <raw_b> <captions.json> [name]
-        front camera cropped tight on the kid, big captions, end card. captions.json: [[raw_t0, raw_t1, "TEXT"], ...]
+        opens on the finished drawings + title, then the front camera tight on the kid with big captions, then the end card. captions.json: [[raw_t0, raw_t1, "TEXT"], ...]
 Output: W/shorts/<slug>-<kind>.mp4 (and copied to SAB - auto edits/Shorts/ by the caller)."""
 import os, sys, json, subprocess, numpy as np
 from PIL import Image, ImageFilter, ImageEnhance
@@ -178,35 +178,41 @@ if kind in ('timelapse', 'facts'):
     print(kind, round(total, 2), 's ->', out)
 
 elif kind == 'moment':
+    # The kid's funny moment: opens on the finished drawings + title (2 s), then the front camera tight on the kid with big captions
+    # (dialogue at full level, quiet music bed), ends on the locked end card (big wordmark, both drawings, "Draw with us today!").
+    # raw_a/raw_b and caption times are dialogue seconds (W/dlg48.wav; the front video is at +prep offset).
     a, b = float(sys.argv[3]), float(sys.argv[4]); caps = json.load(open(sys.argv[5])); name = sys.argv[6] if len(sys.argv) > 6 else 'moment'
+    STYLE = os.environ.get('SAB_SHORT_BG', 'yellow'); MUSIC = os.environ.get('SAB_SHORT_MUSIC', SSD + '/Projects/Cartoon_Swing.m4a')
+    OPEN, END = 2.0, 3.0; dur_m = b - a; total = OPEN + dur_m + END
+    bg, _ = background(O + f'/bg_{STYLE}.png', STYLE); title_card(O + '/title.png')
+    art_card(bg, O + f'/open_{STYLE}.png', Image.open(O + '/title.png'))
+    art_card(bg, O + f'/end_{STYLE}.png', Image.open(R + '/cache/lettering/short-draw-with-us-today_1.png').convert('RGBA'), end=True)
     front = raw(prep['front']); off = prep['offset']; hb = cfg['head_boxes']['kid']
-    cx = (hb[0] + hb[2]) / 2 * SW; cy = ((hb[1] + hb[3]) / 2 + 0.02) * SH; ch = int(1778 * SH / 2160) // 2 * 2; cw = int(1000 * SH / 2160) // 2 * 2
-    x0 = int(min(max(cx - cw / 2, 0), SW - cw)) // 2 * 2; y0 = int(min(max(cy - ch / 2, 0), SH - ch)) // 2 * 2
-    end = 2.6; dur = b - a
+    Z = float(os.environ.get('SAB_MOMENT_ZOOM', 1.35))                     # 9:16 crop, Z times tighter than full height, centred on the kid's head box
+    ch = int(SH / Z) // 2 * 2; cw = int(ch * VW / VH) // 2 * 2
+    cx = (hb[0] + hb[2]) / 2 * SW; x0 = int(min(max(cx - cw / 2, 0), SW - cw)) // 2 * 2
+    cy = (hb[1] + hb[3]) / 2 * SH; y0 = int(min(max(cy - ch / 2, 0), SH - ch)) // 2 * 2
     def t(s):  # ASS time
         s = max(0, s); return f"{int(s // 3600)}:{int(s % 3600 // 60):02d}:{s % 60:05.2f}"
     ass = ["[Script Info]", "ScriptType: v4.00+", f"PlayResX: {VW}", f"PlayResY: {VH}", "", "[V4+ Styles]",
            "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-           "Style: Cap,Permanent Marker,92,&H00F0E2C8,&H000000FF,&H00301A0D,&H64000000,0,0,0,0,100,100,1,0,1,9,4,2,60,60,330,1",
-           "Style: End,Permanent Marker,84,&H00F0E2C8,&H000000FF,&H00301A0D,&H64000000,0,0,0,0,100,100,1,0,1,9,4,5,60,60,0,1",
+           "Style: Cap,Permanent Marker,100,&H00F0E2C8,&H000000FF,&H00301A0D,&H64000000,0,0,0,0,100,100,1,0,1,10,5,2,40,40,300,1",
            "", "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"]
     for s0, s1, txt in caps: ass.append(f"Dialogue: 0,{t(s0 - a)},{t(min(s1, b) - a)},Cap,,0,0,0,,{txt}")
-    ass.append(f"Dialogue: 0,{t(dur)},{t(dur + end)},End,,0,0,0,,FULL LESSON\\NON OUR CHANNEL!\\N✏️ SUPER ART BROS")
     open(O + f'/{name}.ass', 'w').write('\n'.join(ass))
-    # audio: dialogue (with the episode's duck ranges), then silence under the end card
-    import wave
-    w = wave.open(W + '/dlg48.wav'); SR = w.getframerate(); ch_n = w.getnchannels()
-    w.setpos(int(a * SR)); x = np.frombuffer(w.readframes(int(dur * SR)), np.int16).astype(np.float32).reshape(-1, ch_n)
-    for d_a, d_b, db in cfg.get('duck', []):
-        i0, i1 = int((d_a - a) * SR), int((d_b - a) * SR)
-        if i1 > 0 and i0 < len(x): x[max(0, i0):max(0, i1)] *= 10 ** (db / 20)
-    x = np.concatenate([x, np.zeros((int(end * SR), ch_n), np.float32)])
-    o = wave.open(O + f'/{name}_raw.wav', 'wb'); o.setnchannels(ch_n); o.setsampwidth(2); o.setframerate(SR); o.writeframes(np.clip(x, -32768, 32767).astype(np.int16).tobytes()); o.close()
-    audio_norm(['-i', O + f'/{name}_raw.wav'], dur + end, O + f'/{name}_audio.wav', fade_out=0.6)
-    vf = (('hflip,vflip,' if prep['flip_front'] else '') + f"fps=24,crop={cw}:{ch}:{x0}:{y0},scale={VW}:{VH},"
-          f"tpad=stop_mode=clone:stop_duration={end},eq=brightness=0:enable='gte(t,{dur})',"
-          f"boxblur=20:enable='gte(t,{dur})',subtitles={O}/{name}.ass:fontsdir={FONTS}")
-    run(['-ss', str(a + off), '-t', str(dur), '-i', front, '-i', O + f'/{name}_audio.wav', '-map', '0:v', '-map', '1:a', '-vf', vf,
-         '-t', str(dur + end), '-r', '24', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '19', '-pix_fmt', 'yuv420p',
-         '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart', '-y', f'{O}/{slug}-{name}.mp4'])
-    print('moment', round(dur + end, 2), 's ->', f'{O}/{slug}-{name}.mp4')
+    # audio: dialogue at -16 LUFS over a quiet bed (louder under the cards)
+    run(['-ss', str(a), '-t', str(dur_m), '-i', W + '/dlg48.wav', '-af', 'afade=t=in:d=0.08,afade=t=out:st=%.2f:d=0.25,loudnorm=I=-16:TP=-2,adelay=%d|%d' % (dur_m - 0.25, OPEN * 1000, OPEN * 1000),
+         '-ar', '48000', '-ac', '2', '-y', O + f'/{name}_dlg.wav'])
+    vol = f"volume='if(between(t,{OPEN - 0.3},{OPEN + dur_m}),0.25,1)':eval=frame"
+    run(['-i', MUSIC, '-af', f"atrim=0:{total},loudnorm=I=-21:TP=-3,{vol},afade=t=in:d=0.3,afade=t=out:st={total - 1.5}:d=1.5", '-ar', '48000', '-ac', '2', '-y', O + f'/{name}_bed.wav'])
+    run(['-i', O + f'/{name}_bed.wav', '-i', O + f'/{name}_dlg.wav', '-filter_complex', '[0:a][1:a]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.8', '-ar', '48000', '-y', O + f'/{name}_audio.wav'])
+    enc = ['-r', '24', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '19', '-pix_fmt', 'yuv420p']
+    run(['-loop', '1', '-t', str(OPEN), '-i', O + f'/open_{STYLE}.png', '-vf', f'fade=t=out:st={OPEN - 0.2}:d=0.2:color=white'] + enc + ['-y', O + f'/{name}_v_open.mp4'])
+    vf = (('hflip,vflip,' if prep['flip_front'] else '') + f"fps=24,crop={cw}:{ch}:{x0}:{y0},scale={VW}:{VH}:flags=lanczos,fade=t=in:d=0.2:color=white,subtitles={O}/{name}.ass:fontsdir={FONTS}")
+    run(['-ss', str(a + off), '-t', str(dur_m), '-i', front, '-an', '-vf', vf] + enc + ['-y', O + f'/{name}_v_mid.mp4'])
+    run(['-loop', '1', '-t', str(END), '-i', O + f'/end_{STYLE}.png', '-vf', 'fade=t=in:d=0.3'] + enc + ['-y', O + f'/{name}_v_end.mp4'])
+    open(O + f'/{name}_list.txt', 'w').write(''.join(f"file '{O}/{name}_v_{k}.mp4'\n" for k in ('open', 'mid', 'end')))
+    out = f'{O}/{slug}-{name}-{STYLE}.mp4'
+    run(['-f', 'concat', '-safe', '0', '-i', O + f'/{name}_list.txt', '-i', O + f'/{name}_audio.wav', '-map', '0:v', '-map', '1:a', '-c:v', 'copy',
+         '-c:a', 'aac', '-b:a', '160k', '-t', str(total), '-movflags', '+faststart', '-y', out])
+    print('moment', round(total, 2), 's ->', out)
